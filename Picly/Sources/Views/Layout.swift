@@ -1,0 +1,318 @@
+//
+//  Layout.swift
+//  Picly
+//
+
+import Foundation
+import Cocoa
+
+// 这个布局有问题，拖动选中触发区域不一致
+// This layout has issues, drag selection trigger area is inconsistent
+class LeftAlignedCollectionViewFlowLayout: NSCollectionViewFlowLayout {
+    override func prepare() {
+        super.prepare()
+        
+        self.sectionInset = NSEdgeInsets(top: 10, left: 10, bottom: 10, right: 10)
+        self.minimumInteritemSpacing = 10
+        self.minimumLineSpacing = 10
+    }
+    override func layoutAttributesForElements(in rect: NSRect) -> [NSCollectionViewLayoutAttributes] {
+        let attributes = super.layoutAttributesForElements(in: rect)
+        
+        var leftMargin = sectionInset.left
+        var maxY: CGFloat = -1.0
+        
+        for layoutAttribute in attributes {
+            if layoutAttribute.frame.origin.y >= maxY {
+                leftMargin = sectionInset.left
+            }
+
+            layoutAttribute.frame.origin.x = leftMargin
+            
+            leftMargin += layoutAttribute.frame.width + minimumInteritemSpacing
+            maxY = max(layoutAttribute.frame.maxY, maxY)
+        }
+        
+        return attributes
+    }
+}
+
+class CustomFlowLayout: NSCollectionViewLayout {
+    private var cache: [NSCollectionViewLayoutAttributes] = []
+    private var contentHeight: CGFloat = 0
+    private var contentWidth: CGFloat {
+        guard let collectionView = collectionView else { return 0 }
+        return getViewController(collectionView)?.mainScrollView.bounds.width ?? collectionView.bounds.width
+    }
+
+    // var cellPadding: CGFloat = 5
+    var itemSpacing: CGFloat = 0
+    var lineSpacing: CGFloat = 0
+
+    override func prepare() {
+        guard let collectionView = collectionView else { return }
+        guard let viewController = getViewController(collectionView) else { return }
+        guard let delegate = collectionView.delegate as? NSCollectionViewDelegateFlowLayout else { return }
+
+        cache.removeAll()
+        contentHeight = 0
+
+        let cellPadding = viewController.publicVar.profile.ThumbnailCellPadding
+        let borderThickness = viewController.publicVar.profile.ThumbnailBorderThickness
+        let lineSpaceAdjust = viewController.publicVar.profile.ThumbnailLineSpaceAdjust
+        var xOffset: CGFloat = cellPadding
+        var yOffset: CGFloat = cellPadding
+        var rowHeight: CGFloat = 0
+
+        for item in 0 ..< collectionView.numberOfItems(inSection: 0) {
+            let indexPath = IndexPath(item: item, section: 0)
+            let itemSize = delegate.collectionView!(collectionView, layout: self, sizeForItemAt: indexPath)
+            
+            let width = itemSize.width + 2 * cellPadding
+            let height = itemSize.height + 2 * cellPadding
+
+            if xOffset + width > contentWidth {
+                xOffset = cellPadding
+                yOffset += rowHeight + lineSpacing + lineSpaceAdjust
+                rowHeight = 0
+            }
+
+            let frame = CGRect(x: xOffset, y: yOffset, width: width, height: height)
+            let insetFrame = frame.insetBy(dx: cellPadding, dy: cellPadding)
+            let attributes = NSCollectionViewLayoutAttributes(forItemWith: indexPath)
+            attributes.frame = insetFrame
+            cache.append(attributes)
+
+            contentHeight = max(contentHeight, frame.maxY + cellPadding)
+            rowHeight = max(rowHeight, height)
+            xOffset += width + itemSpacing
+        }
+
+        // RTL: 镜像翻转所有item的x坐标
+        // RTL: mirror flip x coordinates for all items
+        if collectionView.userInterfaceLayoutDirection == .rightToLeft {
+            let scrollbarWidth = viewController.publicVar.profile.ThumbnailScrollbarWidth
+            let mirrorWidth = contentWidth - scrollbarWidth
+            for attributes in cache {
+                attributes.frame.origin.x = mirrorWidth - attributes.frame.origin.x - attributes.frame.width
+            }
+        }
+    }
+
+    override var collectionViewContentSize: NSSize {
+        guard let collectionView = collectionView else { return NSSize(width: 100, height: 100)}
+        guard let viewController = getViewController(collectionView) else { return NSSize(width: 100, height: 100)}
+        let cellPadding = viewController.publicVar.profile.ThumbnailCellPadding
+        return NSSize(width: contentWidth, height: contentHeight)
+    }
+
+    override func layoutAttributesForElements(in rect: NSRect) -> [NSCollectionViewLayoutAttributes] {
+        var visibleLayoutAttributes: [NSCollectionViewLayoutAttributes] = []
+
+        for attributes in cache {
+            if attributes.frame.intersects(rect) {
+                visibleLayoutAttributes.append(attributes)
+            }
+        }
+
+        return visibleLayoutAttributes
+    }
+
+    override func layoutAttributesForItem(at indexPath: IndexPath) -> NSCollectionViewLayoutAttributes? {
+        guard indexPath.item < cache.count else { return nil }
+        return cache[indexPath.item]
+    }
+}
+
+class CustomGridLayout: NSCollectionViewLayout {
+    private var cache: [NSCollectionViewLayoutAttributes] = []
+    private var contentHeight: CGFloat = 0
+    private var contentWidth: CGFloat {
+        guard let collectionView = collectionView else { return 0 }
+        return getViewController(collectionView)?.mainScrollView.bounds.width ?? collectionView.bounds.width
+    }
+
+    // var cellPadding: CGFloat = 5
+    var itemSpacing: CGFloat = 0
+    var lineSpacing: CGFloat = 0
+
+    override func prepare() {
+        guard let collectionView = collectionView else { return }
+        guard let viewController = getViewController(collectionView) else { return }
+        guard let delegate = collectionView.delegate as? NSCollectionViewDelegateFlowLayout else { return }
+
+        cache.removeAll()
+        contentHeight = 0
+
+        let filenamePadding = viewController.publicVar.profile.ThumbnailFilenamePadding
+        let cellPadding = viewController.publicVar.profile.ThumbnailCellPadding
+        let borderThickness = viewController.publicVar.profile.ThumbnailBorderThickness
+        let numberOfColumns = Double(viewController.publicVar.waterfallLayout.numberOfColumns)
+        let scrollbarWidth = viewController.publicVar.profile.ThumbnailScrollbarWidth
+        var totalWidth = contentWidth - scrollbarWidth - 2 * cellPadding
+        
+        var xOffset: CGFloat = cellPadding
+        var yOffset: CGFloat = cellPadding
+        var rowHeight: CGFloat = 0
+
+        for item in 0 ..< collectionView.numberOfItems(inSection: 0) {
+            let indexPath = IndexPath(item: item, section: 0)
+            let itemSize = delegate.collectionView!(collectionView, layout: self, sizeForItemAt: indexPath)
+            
+            // 使用固定尺寸计算位置
+            // Use fixed size to calculate position
+            let positionWidth: CGFloat = floor(totalWidth/CGFloat(numberOfColumns+1))
+            let positionHeight: CGFloat = positionWidth + filenamePadding
+
+            if xOffset + positionWidth > contentWidth {
+                xOffset = cellPadding
+                yOffset += rowHeight + lineSpacing
+                rowHeight = 0
+            }
+
+            // 计算网格单元格的宽度和实际内容的宽度差
+            // Calculate difference between grid cell width and actual content width
+            let itemWidth = itemSize.width
+            let itemHeight = itemSize.height
+            let horizontalOffset = (positionWidth - itemWidth) / 2
+            let verticalOffset = (positionHeight - itemHeight) / 2
+
+            // 创建居中的frame
+            // Create centered frame
+            let frame = CGRect(x: xOffset + horizontalOffset, y: yOffset + verticalOffset, width: itemWidth, height: itemHeight - filenamePadding)
+            let insetFrame = frame.insetBy(dx: 0, dy: 0)
+            let attributes = NSCollectionViewLayoutAttributes(forItemWith: indexPath)
+            attributes.frame = insetFrame
+            cache.append(attributes)
+
+            contentHeight = max(contentHeight, yOffset + positionHeight + cellPadding)
+            // 使用固定高度计算行高
+            // Use fixed height to calculate row height
+            rowHeight = max(rowHeight, positionHeight)
+            // 使用固定宽度计算下一个位置
+            // Use fixed width to calculate next position
+            xOffset += positionWidth + itemSpacing
+        }
+
+        // RTL: 镜像翻转所有item的x坐标
+        // RTL: mirror flip x coordinates for all items
+        if collectionView.userInterfaceLayoutDirection == .rightToLeft {
+            let mirrorWidth = contentWidth - scrollbarWidth
+            for attributes in cache {
+                attributes.frame.origin.x = mirrorWidth - attributes.frame.origin.x - attributes.frame.width
+            }
+        }
+    }
+
+    override var collectionViewContentSize: NSSize {
+        guard let collectionView = collectionView else { return NSSize(width: 100, height: 100)}
+        guard let viewController = getViewController(collectionView) else { return NSSize(width: 100, height: 100)}
+        let cellPadding = viewController.publicVar.profile.ThumbnailCellPadding
+        return NSSize(width: contentWidth, height: contentHeight)
+    }
+
+    override func layoutAttributesForElements(in rect: NSRect) -> [NSCollectionViewLayoutAttributes] {
+        var visibleLayoutAttributes: [NSCollectionViewLayoutAttributes] = []
+
+        for attributes in cache {
+            if attributes.frame.intersects(rect) {
+                visibleLayoutAttributes.append(attributes)
+            }
+        }
+
+        return visibleLayoutAttributes
+    }
+
+    override func layoutAttributesForItem(at indexPath: IndexPath) -> NSCollectionViewLayoutAttributes? {
+        guard indexPath.item < cache.count else { return nil }
+        return cache[indexPath.item]
+    }
+}
+
+class WaterfallLayout: NSCollectionViewLayout {
+    private var cache: [NSCollectionViewLayoutAttributes] = []
+    private var contentHeight: CGFloat = 0
+    private var contentWidth: CGFloat {
+        guard let collectionView = collectionView else { return 0 }
+        return getViewController(collectionView)?.mainScrollView.bounds.width ?? collectionView.bounds.width
+    }
+
+    var numberOfColumns = 5
+    // var cellPadding: CGFloat = 5
+
+    override func prepare() {
+        guard let collectionView = collectionView else { return }
+        guard let viewController = getViewController(collectionView) else { return }
+        guard let delegate = collectionView.delegate as? NSCollectionViewDelegateFlowLayout else { return }
+
+        let cellPadding = viewController.publicVar.profile.ThumbnailCellPadding
+        let borderThickness = viewController.publicVar.profile.ThumbnailBorderThickness
+        let lineSpaceAdjust = viewController.publicVar.profile.ThumbnailLineSpaceAdjust
+        let totalWidth = viewController.mainScrollView.bounds.width
+        let scrollbarWidth = viewController.publicVar.profile.ThumbnailScrollbarWidth
+        let columnWidth = floor((totalWidth - scrollbarWidth - 2*cellPadding) / CGFloat(numberOfColumns))
+        var xOffset: [CGFloat] = []
+        for column in 0 ..< numberOfColumns {
+            xOffset.append(cellPadding + CGFloat(column) * columnWidth)
+        }
+        var yOffset: [CGFloat] = .init(repeating: cellPadding, count: numberOfColumns)
+        
+        cache.removeAll()
+        contentHeight = 0
+        
+        for item in 0 ..< collectionView.numberOfItems(inSection: 0) {
+            let indexPath = IndexPath(item: item, section: 0)
+            let itemSize = delegate.collectionView!(collectionView, layout: self, sizeForItemAt: indexPath)
+            let width = columnWidth - (cellPadding * 2)
+            let height = round(itemSize.height * (width / itemSize.width) + (cellPadding * 2))
+            
+            // 找到所有列中高度最小的列
+            // Find the column with minimum height among all columns
+            let minYOffset = yOffset.min() ?? 0
+            let column = yOffset.firstIndex(of: minYOffset) ?? 0
+            
+            let frame = CGRect(x: xOffset[column], y: yOffset[column], width: columnWidth, height: height)
+            let insetFrame = frame.insetBy(dx: cellPadding, dy: cellPadding)
+            let attributes = NSCollectionViewLayoutAttributes(forItemWith: indexPath)
+            attributes.frame = insetFrame
+            cache.append(attributes)
+
+            contentHeight = max(contentHeight, frame.maxY + cellPadding)
+            yOffset[column] = yOffset[column] + height + lineSpaceAdjust
+        }
+
+        // RTL: 镜像翻转所有item的x坐标
+        // RTL: mirror flip x coordinates for all items
+        if collectionView.userInterfaceLayoutDirection == .rightToLeft {
+            let mirrorWidth = contentWidth - scrollbarWidth
+            for attributes in cache {
+                attributes.frame.origin.x = mirrorWidth - attributes.frame.origin.x - attributes.frame.width
+            }
+        }
+    }
+
+    override var collectionViewContentSize: NSSize {
+        guard let collectionView = collectionView else { return NSSize(width: 100, height: 100)}
+        guard let viewController = getViewController(collectionView) else { return NSSize(width: 100, height: 100)}
+        let cellPadding = viewController.publicVar.profile.ThumbnailCellPadding
+        return NSSize(width: contentWidth, height: contentHeight)
+    }
+
+    override func layoutAttributesForElements(in rect: NSRect) -> [NSCollectionViewLayoutAttributes] {
+        var visibleLayoutAttributes: [NSCollectionViewLayoutAttributes] = []
+        
+        for attributes in cache {
+            if attributes.frame.intersects(rect) {
+                visibleLayoutAttributes.append(attributes)
+            }
+        }
+        
+        return visibleLayoutAttributes
+    }
+
+    override func layoutAttributesForItem(at indexPath: IndexPath) -> NSCollectionViewLayoutAttributes? {
+        guard indexPath.item < cache.count else { return nil }
+        return cache[indexPath.item]
+    }
+}
+

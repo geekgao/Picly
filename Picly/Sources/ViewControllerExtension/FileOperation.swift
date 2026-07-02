@@ -1,0 +1,1776 @@
+//
+//  FileOperation.swift
+//  Picly
+//
+
+import Foundation
+import Cocoa
+import AVFoundation
+import DiskArbitration
+
+extension ViewController {
+    
+    @discardableResult
+    func handleFilePromiseDrop(targetURL: URL, pasteboard: NSPasteboard) -> Bool {
+        guard let receivers = pasteboard.readObjects(forClasses: [NSFilePromiseReceiver.self], options: nil) as? [NSFilePromiseReceiver],
+              !receivers.isEmpty else {
+            return false
+        }
+        
+        let fileManager = FileManager.default
+        let tempRoot = fileManager.temporaryDirectory.appendingPathComponent("PiclyPromisedFiles-\(UUID().uuidString)", isDirectory: true)
+        do {
+            try fileManager.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        } catch {
+            log("Failed to create temp folder for promised files: \(error)", level: .error)
+            return false
+        }
+        
+        var pendingCount = receivers.count
+        var receivedURLs: [URL] = []
+        
+        for receiver in receivers {
+            receiver.receivePromisedFiles(atDestination: tempRoot, options: [:], operationQueue: .main) { [weak self] fileURL, error in
+                if let error = error {
+                    log("Failed to receive promised file: \(error)", level: .error)
+                } else {
+                    receivedURLs.append(fileURL)
+                }
+                
+                pendingCount -= 1
+                if pendingCount == 0 {
+                    defer { try? fileManager.removeItem(at: tempRoot) }
+                    
+                    guard let self = self, !receivedURLs.isEmpty else {
+                        return
+                    }
+                    
+                    let tempPasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+                    tempPasteboard.clearContents()
+                    tempPasteboard.writeObjects(receivedURLs as [NSURL])
+                    self.handlePaste(targetURL: targetURL, pasteboard: tempPasteboard)
+                    tempPasteboard.releaseGlobally()
+                }
+            }
+        }
+        
+        return true
+    }
+    
+    func getUniqueDestinationURL(for url: URL, isInPlace: Bool = false) -> URL {
+        var newURL = url
+        var counter = 1
+        
+        while FileManager.default.fileExists(atPath: newURL.path) {
+            let baseName = url.deletingPathExtension().lastPathComponent
+            let extensionName = url.pathExtension
+            var duplicateName = ""
+            var newName = "\(baseName)_\(duplicateName)\(counter > 0 ? "\(counter+1)" : "")"
+            if isInPlace {
+                duplicateName = NSLocalizedString("copy-lowercase", comment: "copy(首字母小写)")
+                newName = "\(baseName)_\(duplicateName)\(counter > 1 ? "\(counter)" : "")"
+            }
+            
+            
+            newURL = url.deletingLastPathComponent().appendingPathComponent(newName).appendingPathExtension(extensionName)
+            counter += 1
+        }
+        
+        return newURL
+    }
+    
+    func handleNewFolder(targetURL: URL? = nil) -> (Bool,URL?) {
+        let alert = NSAlert()
+        alert.messageText = NSLocalizedString("New Folder", comment: "新建文件夹")
+        alert.informativeText = NSLocalizedString("input-new-folder-name", comment: "请输入文件夹名称：")
+        alert.alertStyle = .informational
+        // 设置系统通知图标
+        // Set system notification icon
+        alert.icon = NSImage(named: NSImage.infoName)
+        
+        // 添加一个文本输入框
+        // Add a text input field
+        let inputTextField = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+        if let textFieldCell = inputTextField.cell as? NSTextFieldCell {
+            textFieldCell.usesSingleLineMode = true
+            textFieldCell.wraps = false
+            textFieldCell.isScrollable = true
+        }
+        alert.accessoryView = inputTextField
+        
+        alert.addButton(withTitle: NSLocalizedString("OK", comment: "确定"))
+        alert.addButton(withTitle: NSLocalizedString("Cancel", comment: "取消"))
+        
+        let StoreIsKeyEventEnabled = publicVar.isKeyEventEnabled
+        publicVar.isKeyEventEnabled=false
+        DispatchQueue.main.async {
+            _ = inputTextField.becomeFirstResponder()
+        }
+        let response = alert.runModal()
+        publicVar.isKeyEventEnabled=StoreIsKeyEventEnabled
+        
+        if response == .alertFirstButtonReturn {
+            let folderName = inputTextField.stringValue
+            
+            if !folderName.isEmpty {
+                fileDB.lock()
+                let curFolder = fileDB.curFolder
+                fileDB.unlock()
+                
+                var destinationURL = URL(string: curFolder)
+                if targetURL != nil {destinationURL=targetURL}
+                guard let destinationURL=destinationURL else {return (false,nil)}
+                
+                let newFolderURL = destinationURL.appendingPathComponent(folderName)
+                
+                // 检查是否存在同名文件
+                // Check if file with same name exists
+                if FileManager.default.fileExists(atPath: newFolderURL.path) {
+                    showAlert(message: NSLocalizedString("renaming-conflict", comment: "该名称的文件已存在，请选择其他名称。"))
+                }else{
+                    // 执行新建操作
+                    // Execute create operation
+                    do {
+                        // 文件更改计数
+                        // File change count
+                        publicVar.fileChangedCount += 1
+                        
+                        try FileManager.default.createDirectory(at: newFolderURL, withIntermediateDirectories: true, attributes: nil)
+                        log("Successfully created folder: \(newFolderURL.path)")
+                        publicVar.filesForLocateAfterChange = [newFolderURL.absoluteString]
+                        publicVar.filesForLocateAfterChangeTime = .now()
+                        return (true,newFolderURL)
+                    } catch {
+                        log("Failed to create folder: \(error)", level: .error)
+                        // Create folder failed
+                    }
+                }
+            }
+        }
+        return (false,nil)
+    }
+
+    func handleNewTextFile(targetURL: URL? = nil) -> (Bool,URL?) {
+        let alert = NSAlert()
+        alert.messageText = NSLocalizedString("New Text File", comment: "新建文本文件")
+        alert.informativeText = NSLocalizedString("input-new-textfile-name", comment: "请输入文件名称：")
+        alert.alertStyle = .informational
+        // 设置系统通知图标
+        // Set system notification icon
+        alert.icon = NSImage(named: NSImage.infoName)
+        
+        // 添加一个文本输入框
+        // Add a text input field
+        let inputTextField = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+        if let textFieldCell = inputTextField.cell as? NSTextFieldCell {
+            textFieldCell.usesSingleLineMode = true
+            textFieldCell.wraps = false
+            textFieldCell.isScrollable = true
+        }
+        alert.accessoryView = inputTextField
+        
+        alert.addButton(withTitle: NSLocalizedString("OK", comment: "确定"))
+        alert.addButton(withTitle: NSLocalizedString("Cancel", comment: "取消"))
+        
+        let StoreIsKeyEventEnabled = publicVar.isKeyEventEnabled
+        publicVar.isKeyEventEnabled=false
+        DispatchQueue.main.async {
+            _ = inputTextField.becomeFirstResponder()
+        }
+        let response = alert.runModal()
+        publicVar.isKeyEventEnabled=StoreIsKeyEventEnabled
+        
+        if response == .alertFirstButtonReturn {
+            var fileName = inputTextField.stringValue
+            
+            if !fileName.isEmpty {
+                // 如果用户没有输入扩展名，则加.txt后缀
+                // If user didn't enter extension, add .txt suffix
+                if !fileName.contains(".") {
+                    fileName += ".txt"
+                }
+                
+                fileDB.lock()
+                let curFolder = fileDB.curFolder
+                fileDB.unlock()
+                
+                var destinationURL = URL(string: curFolder)
+                if targetURL != nil {destinationURL=targetURL}
+                guard let destinationURL=destinationURL else {return (false,nil)}
+                
+                let newFileURL = destinationURL.appendingPathComponent(fileName)
+                
+                // 检查是否存在同名文件
+                // Check if file with same name exists
+                if FileManager.default.fileExists(atPath: newFileURL.path) {
+                    showAlert(message: NSLocalizedString("renaming-conflict", comment: "该名称的文件已存在，请选择其他名称。"))
+                }else{
+                    // 执行新建操作
+                    // Execute create operation
+                    do {
+                        // 创建空文本文件
+                        // Create empty text file
+                        try "".write(to: newFileURL, atomically: true, encoding: .utf8)
+                        
+                        // 文件更改计数
+                        // File change count
+                        publicVar.fileChangedCount += 1
+                        
+                        log("Successfully created text file: \(newFileURL.path)")
+                        publicVar.filesForLocateAfterChange = [newFileURL.absoluteString]
+                        publicVar.filesForLocateAfterChangeTime = .now()
+                        return (true,newFileURL)
+                    } catch {
+                        log("Failed to create text file: \(error)", level: .error)
+                    }
+                }
+            }
+        }
+        return (false,nil)
+    }
+    
+    func handleNewFolderWithSelection() {
+        var urls = publicVar.selectedUrls()
+        if urls.isEmpty {return}
+        
+        let (ifSuccess,newFolderURL) = handleNewFolder()
+        
+        if ifSuccess {
+            // 备份剪贴板内容
+            // Backup pasteboard content
+            let backupItems = backupPasteboard()
+            
+            handleCopy()
+            handleMove(targetURL: newFolderURL)
+            
+            if let newFolderURL = newFolderURL {
+                publicVar.filesForLocateAfterChange = [newFolderURL.absoluteString]
+                publicVar.filesForLocateAfterChangeTime = .now()
+            }
+            
+            // 还原剪贴板内容
+            // Restore pasteboard content
+            restorePasteboard(items: backupItems)
+        }
+        
+    }
+    
+//    // 备份剪贴板内容的函数
+//    func backupPasteboard() -> [NSPasteboard.PasteboardType: Any] {
+//        let pasteboard = NSPasteboard.general
+//        var backupItems = [NSPasteboard.PasteboardType: Any]()
+//
+//        for type in pasteboard.types ?? [] {
+//            if let item = pasteboard.data(forType: type) {
+//                backupItems[type] = item
+//            }
+//        }
+//
+//        return backupItems
+//    }
+//
+//    // 还原剪贴板内容的函数
+//    func restorePasteboard(items: [NSPasteboard.PasteboardType: Any]) {
+//        let pasteboard = NSPasteboard.general
+//        pasteboard.clearContents()
+//
+//        for (type, item) in items {
+//            if let data = item as? Data {
+//                pasteboard.setData(data, forType: type)
+//            }
+//        }
+//    }
+    
+    // 备份剪贴板内容的函数
+    // Function to backup pasteboard content
+    func backupPasteboard() -> [[String: Data]] {
+        let pasteboard = NSPasteboard.general
+        var backupItems = [[String: Data]]()
+        
+        for item in pasteboard.pasteboardItems ?? [] {
+            var backupItem = [String: Data]()
+            for type in item.types {
+                if let data = item.data(forType: type) {
+                    backupItem[type.rawValue] = data
+                }
+            }
+            backupItems.append(backupItem)
+        }
+        
+        return backupItems
+    }
+
+    // 还原剪贴板内容的函数
+    // Function to restore pasteboard content
+    func restorePasteboard(items: [[String: Data]]) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        
+        for itemData in items {
+            let newItem = NSPasteboardItem()
+            for (type, data) in itemData {
+                newItem.setData(data, forType: NSPasteboard.PasteboardType(rawValue: type))
+            }
+            pasteboard.writeObjects([newItem])
+        }
+    }
+    
+    func handleCopy() {
+        let pasteboard = NSPasteboard.general
+        // 清除剪贴板现有内容
+        // Clear existing pasteboard content
+        pasteboard.clearContents()
+        // 将文件URL添加到剪贴板
+        // Add file URLs to pasteboard
+        pasteboard.writeObjects(publicVar.selectedUrls() as [NSPasteboardWriting])
+        // 复制操作重置剪切模式
+        // Copy operation resets cut mode
+        globalVar.isCutMode = false
+        clearCutItemsDimEffect()
+    }
+    
+    func handleCopyToDownload() {
+        if publicVar.selectedUrls().isEmpty {return}
+        
+        // 备份剪贴板内容
+        // Backup pasteboard content
+        let backupItems = backupPasteboard()
+        
+        handleCopy()
+        handlePaste(targetURL: FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first)
+        
+        // 还原剪贴板内容
+        // Restore pasteboard content
+        restorePasteboard(items: backupItems)
+    }
+    
+    func handlePaste(targetURL: URL? = nil, pasteboard: NSPasteboard = NSPasteboard.general) {
+        // 如果是剪切模式，执行移动操作而非复制
+        // If in cut mode, perform move operation instead of copy
+        if globalVar.isCutMode {
+            globalVar.isCutMode = false
+            clearCutItemsDimEffect()
+            handleMove(targetURL: targetURL, pasteboard: pasteboard)
+            return
+        }
+        
+        guard let items = pasteboard.pasteboardItems else { return }
+        
+        fileDB.lock()
+        let curFolder = fileDB.curFolder
+        fileDB.unlock()
+        var destinationURL: URL? = nil
+        if let targetURL = targetURL {
+            destinationURL = targetURL
+        } else {
+            destinationURL = URL(string: curFolder)
+        }
+        guard let destinationURL = destinationURL else { return }
+        
+        // 检查待复制的文件/文件夹列表
+        // Check list of files/folders to copy
+        for item in items {
+            guard let fileURL = URL(string: item.string(forType: .fileURL) ?? "") else { continue }
+            
+            // 检查是否包含目标目录自身或者它的父目录
+            // Check if includes destination directory itself or its parent directory
+            if fileURL == destinationURL || destinationURL.path.hasPrefix(fileURL.path) {
+                showAlert(message: NSLocalizedString("cannot-copy-to-self", comment: "不能将文件/文件夹复制到自身或其子目录中。"))
+                return
+            }
+        }
+
+        // 检查来源是否有同名文件
+        // Check if source has files with same name
+        var ifAutoRenameWhenDifferentSource = false
+        var fileNames = Set<String>()
+        var hasDuplicates = false
+        for item in items {
+            guard let fileURL = URL(string: item.string(forType: .fileURL) ?? "") else { continue }
+            let fileName = fileURL.lastPathComponent
+            if fileNames.contains(fileName) {
+                hasDuplicates = true
+                break
+            }
+            fileNames.insert(fileName)
+        }
+        
+        // 如果有同名文件,弹窗询问是否继续
+        // If there are files with same name, show dialog asking whether to continue
+        if hasDuplicates {
+            let alert = NSAlert()
+            alert.messageText = NSLocalizedString("has-same-name-files", comment: "发现同名文件")
+            alert.informativeText = NSLocalizedString("has-same-name-files-info", comment: "来源文件中包含同名文件，是否自动重命名？")
+            alert.alertStyle = .warning
+            // 设置系统提示图标
+            // Set system notification icon
+            alert.icon = NSImage(named: NSImage.infoName)
+            alert.addButton(withTitle: NSLocalizedString("Auto Rename", comment: "自动重命名"))
+            alert.addButton(withTitle: NSLocalizedString("Cancel", comment: "取消"))
+            
+            let StoreIsKeyEventEnabled = publicVar.isKeyEventEnabled
+            publicVar.isKeyEventEnabled = false
+            defer {
+                publicVar.isKeyEventEnabled = StoreIsKeyEventEnabled
+            }
+            let response = alert.runModal()
+            if response == .alertFirstButtonReturn {
+                ifAutoRenameWhenDifferentSource = true
+            } else {
+                return
+            }
+        }
+
+        // 记录操作到日志
+        // Record operation to log
+        var sourceFiles = items.compactMap { item -> String? in
+            guard let fileURL = URL(string: item.string(forType: .fileURL) ?? "") else { return nil }
+            return fileURL.lastPathComponent
+        }
+        
+        let sourceFilesStr: String
+        if sourceFiles.count > 3 {
+            sourceFilesStr = sourceFiles[0...2].joined(separator: ", ") + "..."
+        } else {
+            sourceFilesStr = sourceFiles.joined(separator: ", ")
+        }
+        
+        let operationLog = "[Paste] \(sourceFilesStr) -> \(destinationURL.lastPathComponent)"
+        globalVar.operationLogs.append(operationLog)
+        
+        // 在文件操作期间抑制文件系统监控触发的刷新，操作完成后主动刷新
+        // Suppress FS watcher refreshes during file operations, refresh explicitly after completion
+        publicVar.isInFileOperation = true
+        // 记录成功粘贴的目标路径，用于刷新后选中
+        // Record successfully pasted destination paths for selection after refresh
+        var successfulDestURLs: [String] = []
+        var indexCopyPairs: [(sourcePath: String, destPath: String)] = []
+        defer {
+            publicVar.isInFileOperation = false
+            if !successfulDestURLs.isEmpty {
+                triggerFinderSound()
+                publicVar.filesForLocateAfterChange = successfulDestURLs
+                publicVar.filesForLocateAfterChangeTime = .now()
+                var ifRefresh = true
+                if publicVar.isRecursiveMode || curFolder.hasPrefix("file:///VirtualFinderTagsFolder") {
+                    fileDB.lock()
+                    ifRefresh = fileDB.db[SortKeyDir(fileDB.curFolder)]?.files.count ?? 0 <= RESET_VIEW_FILE_NUM_THRESHOLD
+                    fileDB.unlock()
+                }
+                if !destinationURL.absoluteString.hasPrefix(curFolder)
+                    && successfulDestURLs.allSatisfy({ urlStr in
+                        if let url = URL(string: urlStr) {
+                            var isDir: ObjCBool = false
+                            FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+                            return !isDir.boolValue
+                        }
+                        return false
+                    }) {
+                    ifRefresh = false
+                }
+                if ifRefresh {
+                    scheduledRefresh()
+                }
+                if destinationURL.absoluteString != curFolder {
+                    DirMetadataCache.shared.removeCache(for: destinationURL)
+                }
+            }
+            if !indexCopyPairs.isEmpty {
+                EnhancedIndex.handleFilesCopied(indexCopyPairs)
+            }
+        }
+        
+        var shouldReplaceAll = false
+        var shouldMergeAll = false
+        var shouldSkipAll = false
+        var shouldAutoRenameAll = false
+        let sharedMergeState = MergeConflictState()
+        
+        let StoreIsKeyEventEnabled = publicVar.isKeyEventEnabled
+        publicVar.isKeyEventEnabled = false
+        for item in items {
+            guard let fileURL = URL(string: item.string(forType: .fileURL) ?? "") else { continue }
+            let prevSuccessCount = successfulDestURLs.count
+            var destURL = destinationURL.appendingPathComponent(fileURL.lastPathComponent)
+
+            if ifAutoRenameWhenDifferentSource {
+                destURL = getUniqueDestinationURL(for: destURL, isInPlace: false)
+            }
+            
+            // 如果是在同一目录复制粘贴，则修改名称
+            // If copying/pasting in same directory, modify name
+            var isInSameFolder = fileURL.deletingLastPathComponent() == destinationURL
+            if isInSameFolder {
+                destURL = getUniqueDestinationURL(for: destURL, isInPlace: true)
+            }
+            
+            if FileManager.default.fileExists(atPath: destURL.path) {
+                // 检测源和目标是否都是文件夹
+                // Check if both source and destination are folders
+                var srcIsDir: ObjCBool = false
+                FileManager.default.fileExists(atPath: fileURL.path, isDirectory: &srcIsDir)
+                var dstIsDir: ObjCBool = false
+                FileManager.default.fileExists(atPath: destURL.path, isDirectory: &dstIsDir)
+                let bothAreFolders = srcIsDir.boolValue && dstIsDir.boolValue
+                
+                if shouldReplaceAll {
+                    do {
+                        try FileManager.default.removeItem(at: destURL)
+                        try FileManager.default.copyItem(at: fileURL, to: destURL)
+                        successfulDestURLs.append(destURL.absoluteString)
+                        publicVar.fileChangedCount += 1
+                    } catch {
+                        log("Failed to paste \(fileURL): \(error)", level: .error)
+                    }
+                } else if shouldMergeAll && bothAreFolders {
+                    if mergeFolderByCopy(from: fileURL, to: destURL, state: sharedMergeState) {
+                        successfulDestURLs.append(destURL.absoluteString)
+                        publicVar.fileChangedCount += 1
+                    }
+                    if sharedMergeState.cancelled {
+                        publicVar.isKeyEventEnabled = StoreIsKeyEventEnabled
+                        return
+                    }
+                } else if shouldSkipAll {
+                    continue
+                } else if shouldAutoRenameAll {
+                    destURL = getUniqueDestinationURL(for: destURL, isInPlace: false)
+                    do {
+                        try FileManager.default.copyItem(at: fileURL, to: destURL)
+                        successfulDestURLs.append(destURL.absoluteString)
+                        publicVar.fileChangedCount += 1
+                    } catch {
+                        log("Failed to paste \(fileURL): \(error)", level: .error)
+                    }
+                } else {
+                    let userChoice = showReplaceDialog(for: destURL, sourceURL: fileURL, isSingle: items.count == 1, isMove: false)
+                    switch userChoice {
+                    case .replace:
+                        do {
+                            try FileManager.default.removeItem(at: destURL)
+                            try FileManager.default.copyItem(at: fileURL, to: destURL)
+                            successfulDestURLs.append(destURL.absoluteString)
+                            publicVar.fileChangedCount += 1
+                        } catch {
+                            log("Failed to paste \(fileURL): \(error)", level: .error)
+                        }
+                    case .replaceAll:
+                        shouldReplaceAll = true
+                        do {
+                            try FileManager.default.removeItem(at: destURL)
+                            try FileManager.default.copyItem(at: fileURL, to: destURL)
+                            successfulDestURLs.append(destURL.absoluteString)
+                            publicVar.fileChangedCount += 1
+                        } catch {
+                            log("Failed to paste \(fileURL): \(error)", level: .error)
+                        }
+                    case .merge:
+                        if mergeFolderByCopy(from: fileURL, to: destURL, state: sharedMergeState) {
+                            successfulDestURLs.append(destURL.absoluteString)
+                            publicVar.fileChangedCount += 1
+                        }
+                        if sharedMergeState.cancelled {
+                            publicVar.isKeyEventEnabled = StoreIsKeyEventEnabled
+                            return
+                        }
+                    case .mergeAll:
+                        shouldMergeAll = true
+                        if mergeFolderByCopy(from: fileURL, to: destURL, state: sharedMergeState) {
+                            successfulDestURLs.append(destURL.absoluteString)
+                            publicVar.fileChangedCount += 1
+                        }
+                        if sharedMergeState.cancelled {
+                            publicVar.isKeyEventEnabled = StoreIsKeyEventEnabled
+                            return
+                        }
+                    case .autoRename:
+                        destURL = getUniqueDestinationURL(for: destURL, isInPlace: false)
+                        do {
+                            try FileManager.default.copyItem(at: fileURL, to: destURL)
+                            successfulDestURLs.append(destURL.absoluteString)
+                            publicVar.fileChangedCount += 1
+                        } catch {
+                            log("Failed to paste \(fileURL): \(error)", level: .error)
+                        }
+                    case .autoRenameAll:
+                        shouldAutoRenameAll = true
+                        destURL = getUniqueDestinationURL(for: destURL, isInPlace: false)
+                        do {
+                            try FileManager.default.copyItem(at: fileURL, to: destURL)
+                            successfulDestURLs.append(destURL.absoluteString)
+                            publicVar.fileChangedCount += 1
+                        } catch {
+                            log("Failed to paste \(fileURL): \(error)", level: .error)
+                        }
+                    case .skip:
+                        continue
+                    case .skipAll:
+                        shouldSkipAll = true
+                        continue
+                    case .cancel:
+                        publicVar.isKeyEventEnabled = StoreIsKeyEventEnabled
+                        return
+                    }
+                }
+            } else {
+                do {
+                    try FileManager.default.copyItem(at: fileURL, to: destURL)
+                    successfulDestURLs.append(destURL.absoluteString)
+                    publicVar.fileChangedCount += 1
+                } catch {
+                    log("Failed to paste \(fileURL): \(error)", level: .error)
+                }
+            }
+            if successfulDestURLs.count > prevSuccessCount,
+               let destStr = successfulDestURLs.last,
+               let destPath = URL(string: destStr)?.path {
+                indexCopyPairs.append((sourcePath: fileURL.path, destPath: destPath))
+            }
+        }
+        publicVar.isKeyEventEnabled = StoreIsKeyEventEnabled
+    }
+    
+    func handleMoveToDownload() {
+        if publicVar.selectedUrls().isEmpty {return}
+        
+        // 备份剪贴板内容
+        // Backup pasteboard content
+        let backupItems = backupPasteboard()
+        
+        handleCopy()
+        handleMove(targetURL: FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first)
+        
+        // 还原剪贴板内容
+        // Restore pasteboard content
+        restorePasteboard(items: backupItems)
+    }
+
+    func handleMove(targetURL: URL? = nil, pasteboard: NSPasteboard = NSPasteboard.general) {
+        
+        // 重置剪切模式，防止直接调用handleMove后isCutMode残留为true
+        // Reset cut mode to prevent isCutMode remaining true after direct handleMove calls
+        globalVar.isCutMode = false
+        clearCutItemsDimEffect()
+        
+        // 按住Option则为复制
+        // Hold Option to copy
+        if isOptionKeyPressed() && !isCommandKeyPressed() {
+            handlePaste(targetURL: targetURL, pasteboard: pasteboard)
+            return
+        }
+        
+        guard let items = pasteboard.pasteboardItems else { return }
+        
+        fileDB.lock()
+        let curFolder = fileDB.curFolder
+        fileDB.unlock()
+        var destinationURL: URL? = nil
+        if let targetURL = targetURL {
+            destinationURL = targetURL
+        } else {
+            destinationURL = URL(string: curFolder)
+        }
+        guard let destinationURL = destinationURL else { return }
+        
+        // 检查待移动的文件/文件夹列表
+        // Check list of files/folders to move
+        for item in items {
+            guard let fileURL = URL(string: item.string(forType: .fileURL) ?? "") else { continue }
+            
+            // 检查是否包含目标目录自身或者它的父目录
+            // Check if includes destination directory itself or its parent directory
+            if fileURL == destinationURL || destinationURL.path.hasPrefix(fileURL.path) {
+                showAlert(message: NSLocalizedString("cannot-move-to-self", comment: "不能将文件/文件夹移动到自身或其子目录中。"))
+                return
+            }
+        }
+
+        // 检查来源是否有同名文件
+        // Check if source has files with same name
+        var ifAutoRenameWhenDifferentSource = false
+        var fileNames = Set<String>()
+        var hasDuplicates = false
+        for item in items {
+            guard let fileURL = URL(string: item.string(forType: .fileURL) ?? "") else { continue }
+            let fileName = fileURL.lastPathComponent
+            if fileNames.contains(fileName) {
+                hasDuplicates = true
+                break
+            }
+            fileNames.insert(fileName)
+        }
+        
+        // 如果有同名文件,弹窗询问是否继续
+        // If there are files with same name, show dialog asking whether to continue
+        if hasDuplicates {
+            let alert = NSAlert()
+            alert.messageText = NSLocalizedString("has-same-name-files", comment: "发现同名文件")
+            alert.informativeText = NSLocalizedString("has-same-name-files-info", comment: "来源文件中包含同名文件，是否自动重命名？")
+            alert.alertStyle = .warning
+            // 设置系统提示图标
+            // Set system notification icon
+            alert.icon = NSImage(named: NSImage.infoName)
+            alert.addButton(withTitle: NSLocalizedString("Auto Rename", comment: "自动重命名"))
+            alert.addButton(withTitle: NSLocalizedString("Cancel", comment: "取消"))
+            
+            let StoreIsKeyEventEnabled = publicVar.isKeyEventEnabled
+            publicVar.isKeyEventEnabled = false
+            defer {
+                publicVar.isKeyEventEnabled = StoreIsKeyEventEnabled
+            }
+            let response = alert.runModal()
+            if response == .alertFirstButtonReturn {
+                ifAutoRenameWhenDifferentSource = true
+            } else {
+                return
+            }
+        }
+        
+        // 记录操作到日志
+        // Record operation to log
+        var sourceFiles = items.compactMap { item -> String? in
+            guard let fileURL = URL(string: item.string(forType: .fileURL) ?? "") else { return nil }
+            return fileURL.lastPathComponent
+        }
+        
+        let sourceFilesStr: String
+        if sourceFiles.count > 3 {
+            sourceFilesStr = sourceFiles[0...2].joined(separator: ", ") + "..."
+        } else {
+            sourceFilesStr = sourceFiles.joined(separator: ", ")
+        }
+        
+        let operationLog = "[Move] \(sourceFilesStr) -> \(destinationURL.lastPathComponent)"
+        globalVar.operationLogs.append(operationLog)
+        
+        // 在文件操作期间抑制文件系统监控触发的刷新，操作完成后主动刷新
+        // Suppress FS watcher refreshes during file operations, refresh explicitly after completion
+        publicVar.isInFileOperation = true
+        // 记录成功粘贴的目标路径，用于刷新后选中
+        // Record successfully pasted destination paths for selection after refresh
+        var successfulDestURLs: [String] = []
+        var indexMovePairs: [(oldPath: String, newPath: String)] = []
+        defer {
+            publicVar.isInFileOperation = false
+            if !successfulDestURLs.isEmpty {
+                triggerFinderSound()
+                publicVar.filesForLocateAfterChange = successfulDestURLs
+                publicVar.filesForLocateAfterChangeTime = .now()
+                // 移动完成后清空通用剪贴板，防止再次粘贴时操作已不存在的源文件
+                // Clear general pasteboard after move to prevent pasting non-existent source files
+                if pasteboard === NSPasteboard.general {
+                    pasteboard.clearContents()
+                }
+                var ifRefresh = true
+                if publicVar.isRecursiveMode || curFolder.hasPrefix("file:///VirtualFinderTagsFolder") {
+                    fileDB.lock()
+                    ifRefresh = fileDB.db[SortKeyDir(fileDB.curFolder)]?.files.count ?? 0 <= RESET_VIEW_FILE_NUM_THRESHOLD
+                    fileDB.unlock()
+                }
+                if ifRefresh {
+                    scheduledRefresh()
+                }
+                if destinationURL.absoluteString != curFolder {
+                    DirMetadataCache.shared.removeCache(for: destinationURL)
+                }
+            }
+            if !indexMovePairs.isEmpty {
+                EnhancedIndex.handleFilesMoved(indexMovePairs)
+                for (oldPath, _) in indexMovePairs {
+                    GeoCache.shared.removeFile(path: oldPath)
+                }
+            }
+        }
+        
+        var shouldReplaceAll = false
+        var shouldMergeAll = false
+        var shouldSkipAll = false
+        var shouldAutoRenameAll = false
+        let sharedMergeState = MergeConflictState()
+        
+        let StoreIsKeyEventEnabled = publicVar.isKeyEventEnabled
+        publicVar.isKeyEventEnabled = false
+        for item in items {
+            guard let fileURL = URL(string: item.string(forType: .fileURL) ?? "") else { continue }
+            let prevSuccessCount = successfulDestURLs.count
+            var destURL = destinationURL.appendingPathComponent(fileURL.lastPathComponent)
+            
+            // 如果是在同一目录移动，则不作动作
+            // If moving in same directory, do nothing
+            var isInSameFolder = fileURL.deletingLastPathComponent() == destinationURL
+            if isInSameFolder {
+                continue
+            }
+
+            if ifAutoRenameWhenDifferentSource {
+                destURL = getUniqueDestinationURL(for: destURL, isInPlace: false)
+            }
+
+            if FileManager.default.fileExists(atPath: destURL.path) {
+                // 检测源和目标是否都是文件夹
+                // Check if both source and destination are folders
+                var srcIsDir: ObjCBool = false
+                FileManager.default.fileExists(atPath: fileURL.path, isDirectory: &srcIsDir)
+                var dstIsDir: ObjCBool = false
+                FileManager.default.fileExists(atPath: destURL.path, isDirectory: &dstIsDir)
+                let bothAreFolders = srcIsDir.boolValue && dstIsDir.boolValue
+                
+                if shouldReplaceAll {
+                    do {
+                        try FileManager.default.removeItem(at: destURL)
+                        try FileManager.default.moveItem(at: fileURL, to: destURL)
+                        successfulDestURLs.append(destURL.absoluteString)
+                        publicVar.fileChangedCount += 1
+                    } catch {
+                        log("Failed to move \(fileURL): \(error)", level: .error)
+                    }
+                } else if shouldMergeAll && bothAreFolders {
+                    if mergeFolderByMove(from: fileURL, to: destURL, state: sharedMergeState) {
+                        successfulDestURLs.append(destURL.absoluteString)
+                        publicVar.fileChangedCount += 1
+                    }
+                    if sharedMergeState.cancelled {
+                        publicVar.isKeyEventEnabled = StoreIsKeyEventEnabled
+                        return
+                    }
+                } else if shouldSkipAll {
+                    continue
+                } else if shouldAutoRenameAll {
+                    destURL = getUniqueDestinationURL(for: destURL, isInPlace: false)
+                    do {
+                        try FileManager.default.moveItem(at: fileURL, to: destURL)
+                        successfulDestURLs.append(destURL.absoluteString)
+                        publicVar.fileChangedCount += 1
+                    } catch {
+                        log("Failed to move \(fileURL): \(error)", level: .error)
+                    }
+                } else {
+                    let userChoice = showReplaceDialog(for: destURL, sourceURL: fileURL, isSingle: items.count == 1, isMove: true)
+                    switch userChoice {
+                    case .replace:
+                        do {
+                            try FileManager.default.removeItem(at: destURL)
+                            try FileManager.default.moveItem(at: fileURL, to: destURL)
+                            successfulDestURLs.append(destURL.absoluteString)
+                            publicVar.fileChangedCount += 1
+                        } catch {
+                            log("Failed to move \(fileURL): \(error)", level: .error)
+                        }
+                    case .replaceAll:
+                        shouldReplaceAll = true
+                        do {
+                            try FileManager.default.removeItem(at: destURL)
+                            try FileManager.default.moveItem(at: fileURL, to: destURL)
+                            successfulDestURLs.append(destURL.absoluteString)
+                            publicVar.fileChangedCount += 1
+                        } catch {
+                            log("Failed to move \(fileURL): \(error)", level: .error)
+                        }
+                    case .merge:
+                        if mergeFolderByMove(from: fileURL, to: destURL, state: sharedMergeState) {
+                            successfulDestURLs.append(destURL.absoluteString)
+                            publicVar.fileChangedCount += 1
+                        }
+                        if sharedMergeState.cancelled {
+                            publicVar.isKeyEventEnabled = StoreIsKeyEventEnabled
+                            return
+                        }
+                    case .mergeAll:
+                        shouldMergeAll = true
+                        if mergeFolderByMove(from: fileURL, to: destURL, state: sharedMergeState) {
+                            successfulDestURLs.append(destURL.absoluteString)
+                            publicVar.fileChangedCount += 1
+                        }
+                        if sharedMergeState.cancelled {
+                            publicVar.isKeyEventEnabled = StoreIsKeyEventEnabled
+                            return
+                        }
+                    case .autoRename:
+                        destURL = getUniqueDestinationURL(for: destURL, isInPlace: false)
+                        do {
+                            try FileManager.default.moveItem(at: fileURL, to: destURL)
+                            successfulDestURLs.append(destURL.absoluteString)
+                            publicVar.fileChangedCount += 1
+                        } catch {
+                            log("Failed to move \(fileURL): \(error)", level: .error)
+                        }
+                    case .autoRenameAll:
+                        shouldAutoRenameAll = true
+                        destURL = getUniqueDestinationURL(for: destURL, isInPlace: false)
+                        do {
+                            try FileManager.default.moveItem(at: fileURL, to: destURL)
+                            successfulDestURLs.append(destURL.absoluteString)
+                            publicVar.fileChangedCount += 1
+                        } catch {
+                            log("Failed to move \(fileURL): \(error)", level: .error)
+                        }
+                    case .skip:
+                        continue
+                    case .skipAll:
+                        shouldSkipAll = true
+                        continue
+                    case .cancel:
+                        publicVar.isKeyEventEnabled = StoreIsKeyEventEnabled
+                        return
+                    }
+                }
+            } else {
+                do {
+                    try FileManager.default.moveItem(at: fileURL, to: destURL)
+                    successfulDestURLs.append(destURL.absoluteString)
+                    publicVar.fileChangedCount += 1
+                } catch {
+                    log("Failed to move \(fileURL): \(error)", level: .error)
+                }
+            }
+            if successfulDestURLs.count > prevSuccessCount,
+               let destStr = successfulDestURLs.last,
+               let destPath = URL(string: destStr)?.path {
+                indexMovePairs.append((oldPath: fileURL.path, newPath: destPath))
+            }
+        }
+        publicVar.isKeyEventEnabled = StoreIsKeyEventEnabled
+    }
+    
+    func handleDelete(fileUrls: [URL] = [], isShowPrompt: Bool = true) -> Bool {
+        var urls = fileUrls
+        if urls.count == 0 {
+            urls = publicVar.selectedUrls()
+        }
+        guard urls.count != 0 else {return false}
+        
+        fileDB.lock()
+        let curFolder = fileDB.curFolder
+        fileDB.unlock()
+        
+        let ifHasPermission = requestAppleEventsPermission()
+        let isShiftPressed = isShiftKeyPressed()
+        
+        let alert = NSAlert()
+        alert.messageText = NSLocalizedString("Delete", comment: "删除")
+        if isShiftPressed {
+            alert.informativeText = NSLocalizedString("ask-to-delete-shift", comment: "你确定要将这些文件永久删除吗？此操作无法撤销。")
+        }else if VolumeManager.shared.isExternalVolume(urls.first!) {
+            alert.informativeText = NSLocalizedString("ask-to-delete-external", comment: "此目录不支持移动到废纸篓。将立即删除这些项目，此操作无法撤销。")
+        }else{
+            if ifHasPermission{
+                alert.informativeText = NSLocalizedString("ask-to-delete", comment: "你确定要将这些文件移动到废纸篓吗？")
+            }else{
+                alert.informativeText = NSLocalizedString("ask-to-delete-nopermission", comment: "你确定要将这些文件移动到废纸篓吗？(无权限)")
+            }
+        }
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: NSLocalizedString("Delete", comment: "删除"))
+        alert.addButton(withTitle: NSLocalizedString("Cancel", comment: "取消"))
+        // 设置系统警告图标
+        // Set system warning icon
+        alert.icon = NSImage(named: NSImage.cautionName)
+
+        var response: NSApplication.ModalResponse = .alertFirstButtonReturn
+        if isShowPrompt || !ifHasPermission || VolumeManager.shared.isExternalVolume(urls.first!) {
+            let StoreIsKeyEventEnabled = publicVar.isKeyEventEnabled
+            publicVar.isKeyEventEnabled=false
+            response = alert.runModal()
+            publicVar.isKeyEventEnabled=StoreIsKeyEventEnabled
+        }
+
+        // 在文件操作期间抑制文件系统监控触发的刷新，操作完成后主动刷新
+        // Suppress FS watcher refreshes during file operations, refresh explicitly after completion
+        publicVar.isInFileOperation = true
+        defer {
+            publicVar.isInFileOperation = false
+        }
+
+        if response == .alertFirstButtonReturn {
+            // 用户确认删除
+            // User confirmed deletion
+            let fileManager = FileManager.default
+            var urlsToDelete = [URL]()
+            
+            for url in urls {
+                if fileManager.fileExists(atPath: url.path) {
+                    urlsToDelete.append(url)
+                } else {
+                    log("File does not exist: \(url.path)")
+                }
+            }
+            
+            // 记录操作到日志
+            // Record operation to log
+            var sourceFiles = urlsToDelete.map { url -> String in
+                return url.lastPathComponent
+            }
+            
+            let sourceFilesStr: String
+            if sourceFiles.count > 3 {
+                sourceFilesStr = sourceFiles[0...2].joined(separator: ", ") + "..."
+            } else {
+                sourceFilesStr = sourceFiles.joined(separator: ", ")
+            }
+            
+            let operationLog = "[Delete] \(sourceFilesStr)"
+            globalVar.operationLogs.append(operationLog)
+            
+            if !urlsToDelete.isEmpty {
+                // 使用 NSFileManager.trashItem 快速删除（无需 AppleScript/Finder）
+                for url in urlsToDelete {
+                    if isShiftPressed {
+                        try? fileManager.removeItem(at: url)
+                    } else {
+                        try? fileManager.trashItem(at: url, resultingItemURL: nil)
+                    }
+                }
+                
+                EnhancedIndex.handleFilesDeleted(urlsToDelete.map { $0.path })
+
+                // 从 BTree 中移除已删除的文件，避免全量重新扫描
+                // Remove deleted files from BTree to avoid full re-scan
+                let deletedPaths = Set(urlsToDelete.map { $0.absoluteString })
+
+                // 在移除前记录已删除文件的 IndexPath，用于立即从 collection view 删除
+                // Capture index paths before removal, for instant collection view deletion
+                var deletedIndexPaths = [IndexPath]()
+                fileDB.lock()
+                if let dirModel = fileDB.db[SortKeyDir(curFolder)] {
+                    for (key, file) in dirModel.files {
+                        if deletedPaths.contains(file.path) {
+                            if let offset = dirModel.files.offset(of: key) {
+                                deletedIndexPaths.append(IndexPath(item: offset, section: 0))
+                            }
+                        }
+                    }
+                    var keysToRemove: [SortKeyFile] = []
+                    for (key, file) in dirModel.files {
+                        if deletedPaths.contains(file.path) {
+                            keysToRemove.append(key)
+                        }
+                    }
+                    for key in keysToRemove {
+                        dirModel.files.removeValue(forKey: key)
+                    }
+                    dirModel.fileCount = max(0, dirModel.fileCount - urlsToDelete.count)
+                }
+                fileDB.unlock()
+
+                // 直接从 CollectionView 移除，无需再跑后台扫描（BTree 已更新）
+                // Remove from CollectionView directly, no background scan needed
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    // 先取消高亮和选中状态
+                    collectionView.deselectAll(nil)
+                    // 立即删除缩略图，不用等后台刷新
+                    collectionView.deleteItems(at: Set(deletedIndexPaths))
+                    dirURLCache.removeAll()
+                    // 重启监控即可，BTree 已是最新状态
+                    stopWatchingDirectory()
+                    startWatchingDirectory(atPath: curFolder.replacingOccurrences(of: "file://", with: "").removingPercentEncoding!)
+                }
+                
+            } else {
+                log("File to delete does not exist")
+            }
+            return true
+        } else {
+            // 用户取消操作
+            // User cancelled operation
+            log("Delete operation cancelled")
+            return false
+        }
+    }
+    
+    enum ReplaceDialogUserChoice {
+        case replace
+        case replaceAll
+        case merge
+        case mergeAll
+        case skip
+        case skipAll
+        case autoRename
+        case autoRenameAll
+        case cancel
+    }
+
+    func showReplaceDialog(for url: URL, sourceURL: URL? = nil, isSingle: Bool, isMove: Bool) -> ReplaceDialogUserChoice {
+        var srcIsDir: ObjCBool = false
+        let sourceIsFolder = sourceURL != nil && FileManager.default.fileExists(atPath: sourceURL!.path, isDirectory: &srcIsDir) && srcIsDir.boolValue
+        var dstIsDir: ObjCBool = false
+        let destIsFolder = FileManager.default.fileExists(atPath: url.path, isDirectory: &dstIsDir) && dstIsDir.boolValue
+        let canMerge = sourceIsFolder && destIsFolder
+        
+        let alert = NSAlert()
+        alert.messageText = String(format: NSLocalizedString("has-exist-in-dest", comment: "目标文件夹中已存在名为xx的文件。"), url.lastPathComponent)
+        if isMove {
+            alert.informativeText = NSLocalizedString("do-you-want-replace(move)", comment: "你要用正在移动的文件替换它吗？")
+        }else{
+            alert.informativeText = NSLocalizedString("do-you-want-replace(paste)", comment: "你要用正在粘贴的文件替换它吗？")
+        }
+        alert.alertStyle = .warning
+        alert.icon = NSImage(named: NSImage.infoName)
+        
+        // Button order: Replace, [Merge if both folders], Auto Rename, [Skip if multiple], Cancel
+        alert.addButton(withTitle: NSLocalizedString("Replace", comment: "替换"))
+        if canMerge {
+            alert.addButton(withTitle: NSLocalizedString("Merge", comment: "合并"))
+        }
+        alert.addButton(withTitle: NSLocalizedString("Auto Rename", comment: "自动重命名"))
+        if !isSingle {
+            alert.addButton(withTitle: NSLocalizedString("Skip", comment: "跳过"))
+        }
+        alert.addButton(withTitle: NSLocalizedString("Cancel", comment: "取消"))
+        
+        let applyToAllCheckbox = NSButton(checkboxWithTitle: NSLocalizedString("Apply to all", comment: "应用到全部"), target: nil, action: nil)
+        if !isSingle {
+            alert.accessoryView = applyToAllCheckbox
+        }
+        
+        let response = alert.runModal()
+        let applyToAll = applyToAllCheckbox.state == .on
+        
+        if canMerge {
+            // Buttons: Replace(1000), Merge(1001), AutoRename(1002), Skip?(1003), Cancel(1003 or 1004)
+            switch response {
+            case .alertFirstButtonReturn:
+                return applyToAll ? .replaceAll : .replace
+            case .alertSecondButtonReturn:
+                return applyToAll ? .mergeAll : .merge
+            case .alertThirdButtonReturn:
+                return applyToAll ? .autoRenameAll : .autoRename
+            case NSApplication.ModalResponse(rawValue: 1003):
+                if !isSingle { return applyToAll ? .skipAll : .skip }
+                return .cancel
+            case NSApplication.ModalResponse(rawValue: 1004):
+                return .cancel
+            default:
+                return .cancel
+            }
+        } else {
+            switch response {
+            case .alertFirstButtonReturn:
+                return applyToAll ? .replaceAll : .replace
+            case .alertSecondButtonReturn:
+                return applyToAll ? .autoRenameAll : .autoRename
+            case .alertThirdButtonReturn:
+                return applyToAll ? .skipAll : .skip
+            case NSApplication.ModalResponse(rawValue: 1003):
+                return .cancel
+            default:
+                return .cancel
+            }
+        }
+    }
+    
+    /// Tracks user choices across recursive merge operations so "apply to all" persists.
+    class MergeConflictState {
+        var shouldReplaceAll = false
+        var shouldSkipAll = false
+        var shouldAutoRenameAll = false
+        var cancelled = false
+    }
+    
+    @discardableResult
+    func mergeFolderByCopy(from sourceURL: URL, to destURL: URL, state: MergeConflictState? = nil) -> Bool {
+        let fm = FileManager.default
+        let state = state ?? MergeConflictState()
+        
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: sourceURL.path, isDirectory: &isDir), isDir.boolValue else {
+            return false
+        }
+        
+        if !fm.fileExists(atPath: destURL.path) {
+            do {
+                try fm.copyItem(at: sourceURL, to: destURL)
+                return true
+            } catch {
+                log("Merge copy failed (create dest): \(error)", level: .error)
+                return false
+            }
+        }
+        
+        guard let contents = try? fm.contentsOfDirectory(at: sourceURL, includingPropertiesForKeys: [.isDirectoryKey], options: []) else {
+            return false
+        }
+        
+        var allSuccess = true
+        for itemURL in contents {
+            if state.cancelled { return false }
+            
+            var destItemURL = destURL.appendingPathComponent(itemURL.lastPathComponent)
+            
+            var srcIsDir: ObjCBool = false
+            fm.fileExists(atPath: itemURL.path, isDirectory: &srcIsDir)
+            var dstIsDir: ObjCBool = false
+            let destExists = fm.fileExists(atPath: destItemURL.path, isDirectory: &dstIsDir)
+            
+            if srcIsDir.boolValue && destExists && dstIsDir.boolValue {
+                if !mergeFolderByCopy(from: itemURL, to: destItemURL, state: state) {
+                    allSuccess = false
+                }
+            } else if destExists {
+                if itemURL.lastPathComponent == ".DS_Store" {
+                    do {
+                        try fm.removeItem(at: destItemURL)
+                        try fm.copyItem(at: itemURL, to: destItemURL)
+                    } catch {
+                        log("Merge copy failed (.DS_Store): \(error)", level: .error)
+                    }
+                    continue
+                }
+                if state.shouldReplaceAll {
+                    do {
+                        try fm.removeItem(at: destItemURL)
+                        try fm.copyItem(at: itemURL, to: destItemURL)
+                    } catch {
+                        log("Merge copy failed (\(itemURL.lastPathComponent)): \(error)", level: .error)
+                        allSuccess = false
+                    }
+                } else if state.shouldSkipAll {
+                    continue
+                } else if state.shouldAutoRenameAll {
+                    destItemURL = getUniqueDestinationURL(for: destItemURL, isInPlace: false)
+                    do {
+                        try fm.copyItem(at: itemURL, to: destItemURL)
+                    } catch {
+                        log("Merge copy failed (\(itemURL.lastPathComponent)): \(error)", level: .error)
+                        allSuccess = false
+                    }
+                } else {
+                    let choice = showReplaceDialog(for: destItemURL, sourceURL: itemURL, isSingle: false, isMove: false)
+                    switch choice {
+                    case .replace:
+                        do {
+                            try fm.removeItem(at: destItemURL)
+                            try fm.copyItem(at: itemURL, to: destItemURL)
+                        } catch {
+                            log("Merge copy failed (\(itemURL.lastPathComponent)): \(error)", level: .error)
+                            allSuccess = false
+                        }
+                    case .replaceAll:
+                        state.shouldReplaceAll = true
+                        do {
+                            try fm.removeItem(at: destItemURL)
+                            try fm.copyItem(at: itemURL, to: destItemURL)
+                        } catch {
+                            log("Merge copy failed (\(itemURL.lastPathComponent)): \(error)", level: .error)
+                            allSuccess = false
+                        }
+                    case .merge, .mergeAll:
+                        if srcIsDir.boolValue {
+                            if !mergeFolderByCopy(from: itemURL, to: destItemURL, state: state) {
+                                allSuccess = false
+                            }
+                        } else {
+                            do {
+                                try fm.removeItem(at: destItemURL)
+                                try fm.copyItem(at: itemURL, to: destItemURL)
+                            } catch {
+                                log("Merge copy failed (\(itemURL.lastPathComponent)): \(error)", level: .error)
+                                allSuccess = false
+                            }
+                        }
+                    case .autoRename:
+                        destItemURL = getUniqueDestinationURL(for: destItemURL, isInPlace: false)
+                        do {
+                            try fm.copyItem(at: itemURL, to: destItemURL)
+                        } catch {
+                            log("Merge copy failed (\(itemURL.lastPathComponent)): \(error)", level: .error)
+                            allSuccess = false
+                        }
+                    case .autoRenameAll:
+                        state.shouldAutoRenameAll = true
+                        destItemURL = getUniqueDestinationURL(for: destItemURL, isInPlace: false)
+                        do {
+                            try fm.copyItem(at: itemURL, to: destItemURL)
+                        } catch {
+                            log("Merge copy failed (\(itemURL.lastPathComponent)): \(error)", level: .error)
+                            allSuccess = false
+                        }
+                    case .skip:
+                        continue
+                    case .skipAll:
+                        state.shouldSkipAll = true
+                        continue
+                    case .cancel:
+                        state.cancelled = true
+                        return false
+                    }
+                }
+            } else {
+                do {
+                    try fm.copyItem(at: itemURL, to: destItemURL)
+                } catch {
+                    log("Merge copy failed (\(itemURL.lastPathComponent)): \(error)", level: .error)
+                    allSuccess = false
+                }
+            }
+        }
+        return allSuccess
+    }
+    
+    @discardableResult
+    func mergeFolderByMove(from sourceURL: URL, to destURL: URL, state: MergeConflictState? = nil) -> Bool {
+        let fm = FileManager.default
+        let state = state ?? MergeConflictState()
+        
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: sourceURL.path, isDirectory: &isDir), isDir.boolValue else {
+            return false
+        }
+        
+        if !fm.fileExists(atPath: destURL.path) {
+            do {
+                try fm.moveItem(at: sourceURL, to: destURL)
+                return true
+            } catch {
+                log("Merge move failed (create dest): \(error)", level: .error)
+                return false
+            }
+        }
+        
+        guard let contents = try? fm.contentsOfDirectory(at: sourceURL, includingPropertiesForKeys: [.isDirectoryKey], options: []) else {
+            return false
+        }
+        
+        var allSuccess = true
+        for itemURL in contents {
+            if state.cancelled { return false }
+            
+            var destItemURL = destURL.appendingPathComponent(itemURL.lastPathComponent)
+            
+            var srcIsDir: ObjCBool = false
+            fm.fileExists(atPath: itemURL.path, isDirectory: &srcIsDir)
+            var dstIsDir: ObjCBool = false
+            let destExists = fm.fileExists(atPath: destItemURL.path, isDirectory: &dstIsDir)
+            
+            if srcIsDir.boolValue && destExists && dstIsDir.boolValue {
+                if !mergeFolderByMove(from: itemURL, to: destItemURL, state: state) {
+                    allSuccess = false
+                }
+            } else if destExists {
+                if itemURL.lastPathComponent == ".DS_Store" {
+                    do {
+                        try fm.removeItem(at: destItemURL)
+                        try fm.moveItem(at: itemURL, to: destItemURL)
+                    } catch {
+                        log("Merge move failed (.DS_Store): \(error)", level: .error)
+                    }
+                    continue
+                }
+                if state.shouldReplaceAll {
+                    do {
+                        try fm.removeItem(at: destItemURL)
+                        try fm.moveItem(at: itemURL, to: destItemURL)
+                    } catch {
+                        log("Merge move failed (\(itemURL.lastPathComponent)): \(error)", level: .error)
+                        allSuccess = false
+                    }
+                } else if state.shouldSkipAll {
+                    continue
+                } else if state.shouldAutoRenameAll {
+                    destItemURL = getUniqueDestinationURL(for: destItemURL, isInPlace: false)
+                    do {
+                        try fm.moveItem(at: itemURL, to: destItemURL)
+                    } catch {
+                        log("Merge move failed (\(itemURL.lastPathComponent)): \(error)", level: .error)
+                        allSuccess = false
+                    }
+                } else {
+                    let choice = showReplaceDialog(for: destItemURL, sourceURL: itemURL, isSingle: false, isMove: true)
+                    switch choice {
+                    case .replace:
+                        do {
+                            try fm.removeItem(at: destItemURL)
+                            try fm.moveItem(at: itemURL, to: destItemURL)
+                        } catch {
+                            log("Merge move failed (\(itemURL.lastPathComponent)): \(error)", level: .error)
+                            allSuccess = false
+                        }
+                    case .replaceAll:
+                        state.shouldReplaceAll = true
+                        do {
+                            try fm.removeItem(at: destItemURL)
+                            try fm.moveItem(at: itemURL, to: destItemURL)
+                        } catch {
+                            log("Merge move failed (\(itemURL.lastPathComponent)): \(error)", level: .error)
+                            allSuccess = false
+                        }
+                    case .merge, .mergeAll:
+                        if srcIsDir.boolValue {
+                            if !mergeFolderByMove(from: itemURL, to: destItemURL, state: state) {
+                                allSuccess = false
+                            }
+                        } else {
+                            do {
+                                try fm.removeItem(at: destItemURL)
+                                try fm.moveItem(at: itemURL, to: destItemURL)
+                            } catch {
+                                log("Merge move failed (\(itemURL.lastPathComponent)): \(error)", level: .error)
+                                allSuccess = false
+                            }
+                        }
+                    case .autoRename:
+                        destItemURL = getUniqueDestinationURL(for: destItemURL, isInPlace: false)
+                        do {
+                            try fm.moveItem(at: itemURL, to: destItemURL)
+                        } catch {
+                            log("Merge move failed (\(itemURL.lastPathComponent)): \(error)", level: .error)
+                            allSuccess = false
+                        }
+                    case .autoRenameAll:
+                        state.shouldAutoRenameAll = true
+                        destItemURL = getUniqueDestinationURL(for: destItemURL, isInPlace: false)
+                        do {
+                            try fm.moveItem(at: itemURL, to: destItemURL)
+                        } catch {
+                            log("Merge move failed (\(itemURL.lastPathComponent)): \(error)", level: .error)
+                            allSuccess = false
+                        }
+                    case .skip:
+                        continue
+                    case .skipAll:
+                        state.shouldSkipAll = true
+                        continue
+                    case .cancel:
+                        state.cancelled = true
+                        return false
+                    }
+                }
+            } else {
+                do {
+                    try fm.moveItem(at: itemURL, to: destItemURL)
+                } catch {
+                    log("Merge move failed (\(itemURL.lastPathComponent)): \(error)", level: .error)
+                    allSuccess = false
+                }
+            }
+        }
+        
+        // Remove source directory if it's now empty or all items were moved
+        let remaining = try? fm.contentsOfDirectory(at: sourceURL, includingPropertiesForKeys: nil, options: [])
+        if remaining?.isEmpty ?? true {
+            try? fm.removeItem(at: sourceURL)
+        }
+        
+        return allSuccess
+    }
+    
+    func handleRename(urls: [URL]) -> Bool {
+        if urls.isEmpty { return false }
+
+        fileDB.lock()
+        let curFolder = fileDB.curFolder
+        fileDB.unlock()
+        
+        // 创建一个警告对话框
+        // Create an alert dialog
+        let alert = NSAlert()
+        alert.messageText = NSLocalizedString("Rename", comment: "重命名")
+        alert.informativeText = NSLocalizedString("New name for", comment: "请输入新的名称用于") + " \(urls[0].lastPathComponent):"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: NSLocalizedString("OK", comment: "确定"))
+        alert.addButton(withTitle: NSLocalizedString("Cancel", comment: "取消"))
+        // 设置系统通知图标
+        // Set system notification icon
+        alert.icon = NSImage(named: NSImage.infoName)
+        
+        // 添加一个文本输入框到警告对话框中
+        // Add a text input field to the alert dialog
+        let inputTextField = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+        inputTextField.stringValue = urls[0].lastPathComponent
+        if let textFieldCell = inputTextField.cell as? NSTextFieldCell {
+            textFieldCell.usesSingleLineMode = true
+            textFieldCell.wraps = false
+            textFieldCell.isScrollable = true
+        }
+        alert.accessoryView = inputTextField
+        
+        // 显示对话框
+        // Show dialog
+        let StoreIsKeyEventEnabled = publicVar.isKeyEventEnabled
+        publicVar.isKeyEventEnabled = false
+        DispatchQueue.main.async {
+            // 判断是否是文件夹
+            // Check if it's a folder
+            var isDirectory: ObjCBool = false
+            FileManager.default.fileExists(atPath: urls[0].path, isDirectory: &isDirectory)
+            
+            _ = inputTextField.becomeFirstResponder()
+            if isDirectory.boolValue {
+                // 如果是文件夹，选中全部内容
+                // If it's a folder, select all content
+                inputTextField.selectText(nil)
+            } else {
+                // 如果是文件，选中文件名不包含扩展名的部分
+                // If it's a file, select the filename part without extension
+                let fileName = urls[0].deletingPathExtension().lastPathComponent
+                inputTextField.currentEditor()?.selectedRange = NSRange(location: 0, length: fileName.count)
+            }
+        }
+        let response = alert.runModal()
+        publicVar.isKeyEventEnabled = StoreIsKeyEventEnabled
+
+        // 在文件操作期间抑制文件系统监控触发的刷新，操作完成后主动刷新
+        // Suppress FS watcher refreshes during file operations, refresh explicitly after completion
+        publicVar.isInFileOperation = true
+        defer {
+            publicVar.isInFileOperation = false
+        }
+        
+        // 根据用户的选择处理结果
+        // Process result based on user's choice
+        // OK按钮
+        // OK button
+        if response == .alertFirstButtonReturn {
+            let newBaseName = inputTextField.stringValue
+            
+            if newBaseName != "" {
+
+                // 记录操作到日志
+                // Log operation to log
+                let sourceFiles = urls.map { url -> String in
+                    return url.lastPathComponent
+                }
+                
+                let sourceFilesStr: String
+                if sourceFiles.count > 3 {
+                    sourceFilesStr = sourceFiles[0...2].joined(separator: ", ") + "..."
+                } else {
+                    sourceFilesStr = sourceFiles.joined(separator: ", ")
+                }
+                
+                let operationLog = "[Rename] \(sourceFilesStr) -> \(newBaseName)"
+                globalVar.operationLogs.append(operationLog)
+
+                var allSuccess = true
+                
+                // 第一步：生成最终目标名字列表
+                // Step 1: Generate final target name list
+                var finalNames: [(originalUrl: URL, finalUrl: URL)] = []
+                var nameIndex = 1
+                
+                for originalUrl in urls {
+                    var newName = newBaseName
+                    // 批量重命名
+                    // Batch rename
+                    if urls.count > 1 {
+                        var newUrl: URL
+                        var collision = false
+                        repeat {
+                            // 如果有扩展名，在扩展名前添加序号
+                            // If there's an extension, add index before extension
+                            if let ext = originalUrl.pathExtension.isEmpty ? nil : originalUrl.pathExtension {
+                                let nameWithoutExt = (newBaseName as NSString).deletingPathExtension
+                                newName = "\(nameWithoutExt)_\(nameIndex).\(ext)"
+                            } else {
+                                newName = "\(newBaseName)_\(nameIndex)"
+                            }
+                            newUrl = originalUrl.deletingLastPathComponent().appendingPathComponent(newName)
+                            nameIndex += 1
+                            
+                            // 检查是否存在同名文件，但排除当前待重命名列表中的文件
+                            // Check if file with same name exists, but exclude files in current rename list
+                            if FileManager.default.fileExists(atPath: newUrl.path) &&
+                                 !urls.contains(where: { $0.path.lowercased() == newUrl.path.lowercased() })
+                            {
+                                collision = true
+                                
+                                let alert = NSAlert()
+                                alert.messageText = NSLocalizedString("File Already Exists", comment: "文件已存在")
+                                alert.informativeText = NSLocalizedString("file-exists-continue-batch-rename", comment: "批量重命名的序号与已有文件重名，是否继续?")
+                                alert.alertStyle = .warning
+                                alert.addButton(withTitle: NSLocalizedString("Continue", comment: "继续"))
+                                alert.addButton(withTitle: NSLocalizedString("Cancel", comment: "取消"))
+                                
+                                if alert.runModal() == .alertSecondButtonReturn {
+                                    return false
+                                }
+                            }else{
+                                collision = false
+                            }
+                        } while collision
+                    }else{
+                        // 单个重命名
+                        // Single rename
+                        let newUrl = originalUrl.deletingLastPathComponent().appendingPathComponent(newName)
+                        if originalUrl.path == newUrl.path {
+                            // 名称完全未变，无需操作
+                            // Name unchanged, nothing to do
+                            return false
+                        }
+                        // 允许仅大小写变更的重命名（如 A.jpg -> a.jpg），因为在大小写不敏感文件系统上它们指向同一文件
+                        // Allow case-only renames (e.g. A.jpg -> a.jpg) since they refer to the same file on case-insensitive filesystems
+                        let isCaseOnlyRename = originalUrl.path.lowercased() == newUrl.path.lowercased()
+                        if FileManager.default.fileExists(atPath: newUrl.path) && !isCaseOnlyRename {
+                            showAlert(message: NSLocalizedString("renaming-conflict", comment: "该名称的文件已存在，请选择其他名称。"))
+                            allSuccess = false
+                            return false
+                        }
+                    }
+                    
+                    let finalUrl = originalUrl.deletingLastPathComponent().appendingPathComponent(newName)
+                    finalNames.append((originalUrl: originalUrl, finalUrl: finalUrl))
+                }
+                
+                // 第二步：将所有文件改成临时文件名
+                // Step 2: Rename all files to temporary names
+                var tempNames: [(tempUrl: URL, finalUrl: URL)] = []
+                for (index, item) in finalNames.enumerated() {
+                    let tempName = "temp_rename_\(UUID().uuidString)"
+                    let tempUrl = item.originalUrl.deletingLastPathComponent().appendingPathComponent(tempName)
+                    
+                    do {
+                        try FileManager.default.moveItem(at: item.originalUrl, to: tempUrl)
+                        tempNames.append((tempUrl: tempUrl, finalUrl: item.finalUrl))
+                    } catch {
+                        // 如果临时重命名失败，回滚之前的临时重命名
+                        // If temporary rename fails, rollback previous temporary renames
+                        for prevTemp in tempNames {
+                            try? FileManager.default.moveItem(at: prevTemp.tempUrl, to: finalNames[tempNames.count].originalUrl)
+                        }
+                        log("Failed to create temp name: \(error)", level: .error)
+                        allSuccess = false
+                        break
+                    }
+                }
+                
+                // 第三步：将临时文件名改成最终文件名
+                // Step 3: Rename temporary files to final names
+                if allSuccess {
+                    for item in tempNames {
+                        do {
+                            // 文件更改计数
+                            // File change count
+                            publicVar.fileChangedCount += 1
+                            
+                            try FileManager.default.moveItem(at: item.tempUrl, to: item.finalUrl)
+                            log("File renamed to \(item.finalUrl.lastPathComponent)")
+                        } catch {
+                            log("Failed to rename file: \(error)", level: .error)
+                            allSuccess = false
+                            // 这里不需要回滚，因为用户可以通过临时文件找回
+                            // No need to rollback here, as user can recover through temporary files
+                            break
+                        }
+                    }
+                }
+                
+                if allSuccess && !finalNames.isEmpty {
+                    EnhancedIndex.handleFilesMoved(finalNames.map { (oldPath: $0.originalUrl.path, newPath: $0.finalUrl.path) })
+                }
+
+                // 手动刷新
+                // Manually refresh
+                var ifRefresh = true
+                if publicVar.isRecursiveMode || curFolder.hasPrefix("file:///VirtualFinderTagsFolder") {
+                    fileDB.lock()
+                    ifRefresh = fileDB.db[SortKeyDir(fileDB.curFolder)]?.files.count ?? 0 <= RESET_VIEW_FILE_NUM_THRESHOLD
+                    fileDB.unlock()
+                    
+                }
+                if ifRefresh {
+                    scheduledRefresh()
+                }
+                
+                return allSuccess
+            }
+        }
+        return false
+    }
+    
+    func applyCutItemsDimEffect() {
+        for window in NSApp.windows {
+            guard let vc = window.contentViewController as? ViewController else { continue }
+            for item in vc.collectionView.visibleItems() {
+                if let item = item as? CustomCollectionViewItem {
+                    item.updateCutDimEffect()
+                }
+            }
+            updateOutlineViewCutDimEffect(vc.outlineView)
+        }
+    }
+    
+    func clearCutItemsDimEffect() {
+        let hadCutItems = !globalVar.cutItemPaths.isEmpty
+        globalVar.cutItemPaths.removeAll()
+        if hadCutItems {
+            for window in NSApp.windows {
+                guard let vc = window.contentViewController as? ViewController else { continue }
+                for item in vc.collectionView.visibleItems() {
+                    if let item = item as? CustomCollectionViewItem {
+                        item.updateCutDimEffect()
+                    }
+                }
+                updateOutlineViewCutDimEffect(vc.outlineView)
+            }
+        }
+    }
+    
+    private func updateOutlineViewCutDimEffect(_ outlineView: CustomOutlineView) {
+        let visibleRange = outlineView.rows(in: outlineView.visibleRect)
+        for row in visibleRange.location..<(visibleRange.location + visibleRange.length) {
+            guard let rowView = outlineView.rowView(atRow: row, makeIfNecessary: false) else { continue }
+            if let treeNode = outlineView.item(atRow: row) as? TreeNode {
+                let isCut = globalVar.cutItemPaths.contains(treeNode.fullPath)
+                let targetAlpha: CGFloat
+                if isCut {
+                    targetAlpha = 0.4
+                } else if treeNode.isHidden {
+                    targetAlpha = 0.5
+                } else {
+                    targetAlpha = 1.0
+                }
+                for col in 0..<outlineView.numberOfColumns {
+                    if let cellView = rowView.view(atColumn: col) as? NSView {
+                        cellView.alphaValue = targetAlpha
+                    }
+                }
+            }
+        }
+    }
+
+    func handleConvertImage() {
+        guard let window = view.window else { return }
+        guard let url = publicVar.selectedUrls().first else { return }
+
+        showConvertImagePanel(on: window) { [weak self] format, quality in
+            guard let self = self else { return }
+
+            let savePanel = NSSavePanel()
+            savePanel.title = NSLocalizedString("Convert Image", comment: "转换图片格式")
+            savePanel.nameFieldStringValue = url.deletingPathExtension().lastPathComponent + "." + format.fileExtension
+            savePanel.allowedContentTypes = []
+
+            guard let mainWindow = self.view.window else { return }
+            savePanel.beginSheetModal(for: mainWindow) { response in
+                guard response == .OK, let outputURL = savePanel.url else { return }
+
+                var finalFormat = format
+                if finalFormat == .jpeg {
+                    let ext = outputURL.pathExtension.lowercased()
+                    if ext == "jpeg" || ext == "jpg" {
+                        finalFormat = .jpeg
+                    }
+                }
+
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let (success, ffmpegOutput) = convertImageUsingFFmpeg(input: url, output: outputURL, format: finalFormat, quality: quality)
+
+                    DispatchQueue.main.async {
+                        if success {
+                            self.scheduledRefresh()
+                        } else {
+                            let alert = NSAlert()
+                            alert.messageText = NSLocalizedString("convert-image-fail", comment: "图片转换失败")
+                            if let out = ffmpegOutput, !out.isEmpty {
+                                alert.informativeText = out
+                            } else {
+                                alert.informativeText = NSLocalizedString("convert-image-fail-desc", comment: "")
+                            }
+                            alert.runModal()
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

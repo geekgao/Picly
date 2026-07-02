@@ -1,0 +1,2055 @@
+//
+//  WindowController.swift
+//  Picly
+//
+
+import Cocoa
+
+class WindowController: NSWindowController, NSWindowDelegate {
+    
+    var pathShortenStore = ""
+    var windowFrameBeforeFullScreen: NSRect?
+    var cursorHideTimer: Timer?
+    var favoritesPopover: NSPopover?
+
+    override func windowDidLoad() {
+        super.windowDidLoad()
+        
+        log("Start windowDidLoad")
+        
+        self.window?.delegate = self
+        
+        window?.title = ""
+
+        if let window = self.window {
+            // 设置标题栏和工具栏合并效果
+            // Set title bar and toolbar merge effect
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = false
+            window.isMovableByWindowBackground = false
+            
+            // 创建并配置工具栏
+            // Create and configure toolbar
+            globalVar.toolbarIndex += 1
+            let toolbar = NSToolbar(identifier: "MainToolbar"+String(globalVar.toolbarIndex))
+            toolbar.delegate = self
+            toolbar.allowsUserCustomization = false
+            toolbar.autosavesConfiguration = false
+            toolbar.displayMode = .iconOnly
+            // toolbar.showsBaselineSeparator = true
+            window.toolbar = toolbar
+            window.toolbarStyle = .unifiedCompact
+
+            window.acceptsMouseMovedEvents = true
+            if globalVar.autoHideToolbar {
+                window.styleMask.insert(.fullSizeContentView)
+                window.tabbingMode = .disallowed
+            }else{
+                window.tabbingMode = .preferred
+            }
+        }
+        
+        if globalVar.autoHideToolbar {
+            hideTitleBar()
+        }
+        
+        if globalVar.portableMode && globalVar.startSpeedUpImageSizeCache != nil {
+            if let viewController = contentViewController as? ViewController {
+                viewController.adjustWindowPortable(refSize: globalVar.startSpeedUpImageSizeCache, firstShowThumb: false, animate: false, justAdjustWindowFrame: true, isToCenter: true)
+                globalVar.startSpeedUpImageSizeCache=nil
+            }
+        }else{
+            if let frameString = UserDefaults.standard.string(forKey: "windowFrame") {
+                let frame = NSRectFromString(frameString)
+                window?.setFrame(frame, display: true)
+                log("Set window frame to:",frame)
+                if let viewController = contentViewController as? ViewController {
+                    viewController.changeWaterfallLayoutNumberOfColumns()
+                }
+            }
+        }
+        
+        // 设置焦点
+        // Set focus
+        if let viewController = contentViewController as? ViewController {
+            window?.makeFirstResponder(viewController.collectionView)
+        }
+        
+        log("End windowDidLoad")
+    }
+    
+    func prepareForDeinit() {
+        saveWindowState()
+        cancelCursorHideTimer()
+    }
+    
+    func saveWindowState() {
+        guard let window = self.window else { return }
+        if let viewController = contentViewController as? ViewController {
+            if (viewController.publicVar.isInLargeView && globalVar.portableMode) || window.styleMask.contains(.fullScreen) {
+                return
+            }
+        }
+        let frame = NSStringFromRect(window.frame)
+        UserDefaults.standard.set(frame, forKey: "windowFrame")
+    }
+    
+    func windowWillClose(_ notification: Notification) {
+        // 移除引用
+        // Remove reference
+        if let window = notification.object as? NSWindow {
+            log("Window \(window) will close")
+            if let appDelegate = NSApplication.shared.delegate as? AppDelegate {
+                appDelegate.removeWindowController(self)
+            }
+        }
+        
+        // 在窗口关闭时执行清理，例如，保存数据、释放资源等
+        // Perform cleanup when window closes, e.g., save data, release resources
+        if let viewController = contentViewController as? ViewController {
+            viewController.largeImageView.prepareForDeinit()
+            viewController.prepareForDeinit()
+        }
+        self.prepareForDeinit()
+        
+        globalVar.windowNum -= 1
+        log("Window closed, remain: " + String(globalVar.windowNum))
+        if globalVar.windowNum == 0 && globalVar.terminateAfterLastWindowClosed {
+            // 不这样会导致windowWillClose被调用两遍
+            // Not doing this will cause windowWillClose to be called twice
+            DispatchQueue.main.async {
+                NSApplication.shared.terminate(nil)
+            }
+        }
+    }
+    
+    func windowDidBecomeKey(_ notification: Notification) {
+        log("windowDidBecomeKey")
+    }
+    
+    func toggleWindowOnTop() {
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.toggleOnTop()
+    }
+
+    // 在窗口将要进入全屏模式时执行
+    // Execute when window is about to enter full screen mode
+    func windowWillEnterFullScreen(_ notification: Notification) {
+        guard let window = self.window else { return }
+        // 保存当前窗口大小
+        // Save current window size
+        windowFrameBeforeFullScreen = window.frame
+    }
+    
+    // 在窗口已经进入全屏模式时执行
+    // Execute when window has entered full screen mode
+    func windowDidEnterFullScreen(_ notification: Notification) {
+        guard let viewController = contentViewController as? ViewController else {return}
+        
+        // 启动延迟隐藏光标的定时器
+        // Start timer to delay hiding cursor
+        scheduleCursorHide()
+
+        if !globalVar.autoHideToolbar {
+            window?.titlebarAppearsTransparent = true
+            window?.toolbar?.isVisible = false
+        }
+
+        if viewController.publicVar.isInLargeView {
+            if viewController.largeImageView.file.type == .image {
+                viewController.changeLargeImage(firstShowThumb: false, resetSize: true, triggeredByLongPress: false)
+            } else {
+                viewController.largeImageView.determineBlackBg()
+            }
+        }
+    }
+    
+    // 在窗口已经退出全屏模式时执行
+    // Execute when window has exited full screen mode
+    func windowDidExitFullScreen(_ notification: Notification) {
+        guard let viewController = contentViewController as? ViewController else {return}
+        
+        // 取消光标隐藏定时器并显示光标
+        // Cancel cursor hide timer and show cursor
+        cancelCursorHideTimer()
+        NSCursor.unhide()
+
+        if !globalVar.autoHideToolbar {
+            if window?.toolbar?.isVisible == false {
+                window?.titlebarAppearsTransparent = false
+                window?.toolbar?.isVisible = true
+                if let frame = windowFrameBeforeFullScreen {
+                    window?.setFrame(frame, display: true)
+                }
+            }
+        }
+        
+        if viewController.publicVar.isInLargeView {
+            if viewController.largeImageView.file.type == .image {
+                viewController.changeLargeImage(firstShowThumb: false, resetSize: true, triggeredByLongPress: false)
+            } else {
+                viewController.largeImageView.determineBlackBg()
+            }
+        }
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+//        if globalVar.autoHideToolbar {
+//            showTitleBar()
+//        }
+    }
+    
+    override func mouseExited(with event: NSEvent) {
+//        if globalVar.autoHideToolbar {
+//            hideTitleBar()
+//        }
+    }
+    
+    override func mouseMoved(with event: NSEvent) {
+        guard let window = window else { return }
+        guard let toolbar = window.toolbar else { return }
+        guard let viewController = contentViewController as? ViewController else {return}
+        let location = event.locationInWindow
+        
+        // 在全屏模式下，鼠标移动时显示光标并重置隐藏定时器
+        // In full screen mode, show cursor when mouse moves and reset hide timer
+        if window.styleMask.contains(.fullScreen) {
+            NSCursor.unhide()
+            scheduleCursorHide()
+        }
+        
+        if globalVar.autoHideToolbar {
+            if location.y > window.frame.height - 40 {
+                showTitleBar()
+            } else if !window.styleMask.contains(.fullScreen) || (location.y < window.frame.height - 60) {
+                hideTitleBar()
+            }
+        }else{
+            if location.y > window.frame.height - 10 {
+                if toolbar.isVisible == false {
+                    window.titlebarAppearsTransparent = false
+                    toolbar.isVisible = true
+                    viewController.largeImageView.determineBlackBg()
+                }
+            } else if window.styleMask.contains(.fullScreen) && (location.y < window.frame.height - 30) {
+                if toolbar.isVisible == true {
+                    window.titlebarAppearsTransparent = true
+                    toolbar.isVisible = false
+                    viewController.largeImageView.determineBlackBg()
+                }
+            }
+        }
+    }
+    
+    // 显示标题栏和工具栏
+    // Show title bar and toolbar
+    func showTitleBar() {
+        guard let window = window else { return }
+        guard let toolbar = window.toolbar else { return }
+        if toolbar.isVisible == true { return }
+        window.standardWindowButton(.closeButton)?.isHidden = false
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = false
+        window.standardWindowButton(.zoomButton)?.isHidden = false
+        window.titlebarAppearsTransparent = false
+        toolbar.isVisible = true
+    }
+    
+    // 隐藏标题栏和工具栏
+    // Hide title bar and toolbar
+    func hideTitleBar() {
+        guard let window = window else { return }
+        guard let toolbar = window.toolbar else { return }
+        if toolbar.isVisible == false { return }
+        window.standardWindowButton(.closeButton)?.isHidden = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
+        window.titlebarAppearsTransparent = true
+        toolbar.isVisible = false
+    }
+    
+    // 安排延迟隐藏光标（在全屏模式下，鼠标停止移动后1秒隐藏）
+    // Schedule delayed cursor hiding (in full screen mode, hide cursor 1 second after mouse stops moving)
+    func scheduleCursorHide() {
+        cancelCursorHideTimer()
+        if globalVar.autoHideCursorWhenFullscreen {
+            cursorHideTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { [weak self] _ in
+                guard let self = self else { return }
+                guard let window = self.window else { return }
+                if window.styleMask.contains(.fullScreen),
+                   NSApp.keyWindow === window,
+                   window.frame.contains(NSEvent.mouseLocation) {
+                    NSCursor.hide()
+                }
+            }
+        }
+    }
+    
+    // 取消光标隐藏定时器
+    // Cancel cursor hide timer
+    func cancelCursorHideTimer() {
+        cursorHideTimer?.invalidate()
+        cursorHideTimer = nil
+    }
+}
+
+extension NSToolbarItem.Identifier {
+    static let sidebar = NSToolbarItem.Identifier("com.example.sidebar")
+    static let goBack = NSToolbarItem.Identifier("com.example.goBack")
+    static let goForward = NSToolbarItem.Identifier("com.example.goForward")
+    static let upFolder = NSToolbarItem.Identifier("com.example.upFolder")
+    static let viewToggle = NSToolbarItem.Identifier("com.example.viewToggle")
+    static let newtab = NSToolbarItem.Identifier("com.example.newtab")
+    static let showinfo = NSToolbarItem.Identifier("com.example.showinfo")
+    static let ontop = NSToolbarItem.Identifier("com.example.ontop")
+    static let windowTitle = NSToolbarItem.Identifier("com.example.windowTitle")
+    static let windowTitleStatistics = NSToolbarItem.Identifier("com.example.windowTitleStatistics")
+    static let pathControl = NSToolbarItem.Identifier("com.example.pathControl")
+    static let rotateL = NSToolbarItem.Identifier("com.example.rotateL")
+    static let rotateR = NSToolbarItem.Identifier("com.example.rotateR")
+    static let zoomIn = NSToolbarItem.Identifier("com.example.zoomIn")
+    static let zoomOut = NSToolbarItem.Identifier("com.example.zoomOut")
+    static let sort = NSToolbarItem.Identifier("com.example.sort")
+    static let more = NSToolbarItem.Identifier("com.example.more")
+    static let favorites = NSToolbarItem.Identifier("com.example.favorites")
+    static let tagging = NSToolbarItem.Identifier("com.example.tagging")
+    static let thumbSize = NSToolbarItem.Identifier("com.example.thumbSize")
+    static let isRecursiveMode = NSToolbarItem.Identifier("com.example.isRecursiveMode")
+    static let isSearchFilterOn = NSToolbarItem.Identifier("com.example.isSearchFilterOn")
+    static let isTagFilterOn = NSToolbarItem.Identifier("com.example.isTagFilterOn")
+    static let isRatingFilterOn = NSToolbarItem.Identifier("com.example.isRatingFilterOn")
+    static let isAutoPlayVisibleVideo = NSToolbarItem.Identifier("com.example.isAutoPlayVisibleVideo")
+    static let isEnableHDR = NSToolbarItem.Identifier("com.example.isEnableHDR")
+}
+
+extension WindowController: NSToolbarDelegate {
+    
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        return getItemIdentifiers()
+    }
+    
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        return getItemIdentifiers()
+    }
+    
+    func getItemIdentifiers() -> [NSToolbarItem.Identifier] {
+        // , .flexibleSpace, .space
+        var identifiers: [NSToolbarItem.Identifier] = [.sidebar, .favorites, .goBack, .goForward]
+        
+        // identifiers.append(.upFolder)
+        
+        if let viewController = contentViewController as? ViewController {
+            if viewController.publicVar.isInLargeView {
+                identifiers.append(.windowTitle)
+                if #available(macOS 14.0, *) {
+                    let file = viewController.largeImageView.file
+                    if let isHDR = file.imageInfo?.isHDR,
+                       isHDR,
+                       !(globalVar.HandledRawExtensions.contains(file.ext.lowercased()) && viewController.publicVar.isRawUseEmbeddedThumb) {
+                        identifiers.append(.isEnableHDR)
+                    }
+                }
+                if viewController.largeImageView.file.type == .image {
+                    identifiers.append(.zoomOut)
+                    identifiers.append(.zoomIn)
+                }
+                // identifiers.append(.rotateL)
+                identifiers.append(.rotateR)
+                identifiers.append(.showinfo)
+            }else{
+                if viewController.publicVar.profile.getValue(forKey: "isWindowTitleUseFullPath") == "true" {
+                    identifiers.append(.pathControl)
+                    if viewController.publicVar.profile.getValue(forKey: "isWindowTitleShowStatistics") == "true" {
+                        identifiers.append(.windowTitleStatistics)
+                    }
+                    identifiers.append(.flexibleSpace)
+                }else{
+                    identifiers.append(.windowTitle)
+                }
+                
+                if viewController.publicVar.autoPlayVisibleVideo {
+                    identifiers.append(.isAutoPlayVisibleVideo)
+                }
+                // if !viewController.publicVar.finderTagFilters.isEmpty {
+                //     identifiers.append(.isTagFilterOn)
+                // }
+                // if !viewController.publicVar.ratingFilters.isEmpty {
+                //     identifiers.append(.isRatingFilterOn)
+                // }
+                if viewController.publicVar.isCurrentFolderFiltered {
+                    identifiers.append(.isSearchFilterOn)
+                }
+                if viewController.publicVar.isRecursiveMode {
+                    identifiers.append(.isRecursiveMode)
+                }
+                identifiers.append(.tagging)
+                identifiers.append(.viewToggle)
+                identifiers.append(.thumbSize)
+                identifiers.append(.sort)
+            }
+        }
+        
+        if #available(macOS 26.0, *), SDK_VERSION >= 26 {
+            identifiers.append(.space)
+        }else{
+            identifiers.append(NSToolbarItem.Identifier("CustomSeparator"))
+        }
+        
+        identifiers.append(.more)
+        identifiers.append(.newtab)
+        
+        return identifiers
+    }
+    
+    func updateToolbar() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            updateToolbarSync()
+        }
+    }
+    
+    func updateToolbarSync() {
+        guard let toolbar = window?.toolbar else { return }
+        let itemIdentifiers = getItemIdentifiers()
+        
+        while toolbar.items.count > 0 {
+            toolbar.removeItem(at: 0)
+        }
+        
+        for (index, identifier) in itemIdentifiers.enumerated() {
+            toolbar.insertItem(withItemIdentifier: identifier, at: index)
+        }
+        
+        adjustPathControlWidth()
+    }
+    
+    func adjustPathControlWidth() {
+        guard let toolbar = window?.toolbar,
+              let window = window else { return }
+        
+        guard let pathControlItem = toolbar.items.first(where: { $0.itemIdentifier == .pathControl }),
+              let pathControl = pathControlItem.view as? CustomPathControl else { return }
+        
+        let font = NSFont.systemFont(ofSize: 13, weight: .regular)
+        
+        var otherItemsWidth: CGFloat = 0
+        for item in toolbar.items {
+            if item.itemIdentifier == .pathControl || item.itemIdentifier == .flexibleSpace { continue }
+            if let view = item.view {
+                otherItemsWidth += view.fittingSize.width
+            }
+        }
+        
+        let itemCount = toolbar.items.filter { $0.itemIdentifier != .flexibleSpace }.count
+        let spacingValue: CGFloat
+        if #available(macOS 26.0, *), SDK_VERSION >= 26 {
+            spacingValue = 12
+        } else {
+            spacingValue = 6
+        }
+        let interItemSpacing = CGFloat(itemCount) * spacingValue
+        let maxWidth = window.frame.width - otherItemsWidth - interItemSpacing - 20
+        
+        var pathItems = pathControl.fullPathItems
+        guard !pathItems.isEmpty else { return }
+        
+        var totalWidth: CGFloat = 0
+        var startIndex = pathItems.count - 1
+        
+        for i in (0..<pathItems.count).reversed() {
+            let itemWidth = pathItems[i].title.size(withAttributes: [.font: font]).width + 15
+            totalWidth += itemWidth
+            if totalWidth > maxWidth {
+                startIndex = i + 1
+                break
+            }
+        }
+        
+        if startIndex == pathItems.count {
+            startIndex = pathItems.count - 1
+        }
+        
+        if totalWidth > maxWidth && startIndex != 0 {
+            let ellipsisItem = CustomPathControlItem()
+            ellipsisItem.title = "..."
+            ellipsisItem.myUrl = pathItems[startIndex].myUrl?.deletingLastPathComponent()
+            pathItems = [ellipsisItem] + pathItems[startIndex...]
+        }
+        
+        pathControl.pathItems = pathItems
+        
+        let titleFontColor = NSColor.labelColor
+        for item in pathControl.pathItems {
+            let range = NSMakeRange(0, item.attributedTitle.length)
+            let attributedTitle = NSMutableAttributedString(attributedString: item.attributedTitle)
+            attributedTitle.addAttribute(.foregroundColor, value: titleFontColor, range: range)
+            attributedTitle.addAttribute(.font, value: font, range: range)
+            item.attributedTitle = attributedTitle
+        }
+    }
+    
+    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        let toolbarItem = NSToolbarItem(itemIdentifier: itemIdentifier)
+        guard let viewController = contentViewController as? ViewController else {return toolbarItem}
+        
+        // let titleFontColor = NSApp.effectiveAppearance.name == .darkAqua ? hexToNSColor(hex: "#FFFFFF", alpha: 0.847) : hexToNSColor(hex: "#000000", alpha: 0.847)
+        // let titleFontColor = NSApp.effectiveAppearance.name == .darkAqua ? hexToNSColor(hex: "#FFFFFF", alpha: 0.64) : hexToNSColor(hex: "#000000", alpha: 0.6)
+        let titleFontColor = NSColor.labelColor
+        // let titleFontColor = NSColor.controlTextColor
+        
+        switch itemIdentifier {
+            
+        case .windowTitle:
+            let title = (contentViewController as? ViewController)?.publicVar.toolbarTitle ?? "Picly"
+            let isInLargeView = viewController.publicVar.isInLargeView
+            let showExtra = isInLargeView || viewController.publicVar.profile.getValue(forKey: "isWindowTitleShowStatistics") == "true"
+            let statisticInfo = viewController.publicVar.titleStatisticInfo
+            
+            let font = NSFont.systemFont(ofSize: 13, weight: .regular)
+            let paragraphStyle = NSMutableParagraphStyle()
+            paragraphStyle.alignment = .center
+            let attributedString = NSMutableAttributedString(
+                string: title,
+                attributes: [.foregroundColor: titleFontColor, .font: font, .paragraphStyle: paragraphStyle]
+            )
+            if showExtra && !statisticInfo.isEmpty {
+                let isRTL = NSApp.userInterfaceLayoutDirection == .rightToLeft
+                let statAttr = NSAttributedString(
+                    string: isRTL ? statisticInfo + " " : " " + statisticInfo,
+                    attributes: [.foregroundColor: NSColor.placeholderTextColor, .font: font, .paragraphStyle: paragraphStyle]
+                )
+                // RTL: put statistics before title
+                if isRTL {
+                    attributedString.insert(statAttr, at: 0)
+                } else {
+                    attributedString.append(statAttr)
+                }
+            }
+            
+            let titleLabel = createWindowTitleLabel(string: "")
+            titleLabel.attributedStringValue = attributedString
+            toolbarItem.view = titleLabel
+            toolbarItem.minSize = NSSize(width: 200, height: titleLabel.fittingSize.height)
+            toolbarItem.maxSize = NSSize(width: 10000, height: titleLabel.fittingSize.height)
+            // toolbarItem.minSize = titleLabel.fittingSize
+            // toolbarItem.maxSize = titleLabel.fittingSize
+            toolbarItem.label = NSLocalizedString("Window Title", comment: "窗口标题")
+            toolbarItem.paletteLabel = NSLocalizedString("Window Title", comment: "窗口标题")
+            toolbarItem.visibilityPriority = .high
+            
+        case .windowTitleStatistics:
+            let text = (contentViewController as? ViewController)?.publicVar.titleStatisticInfo
+            let titleLabel = createWindowTitleLabel(string: text ?? "")
+            titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .regular)
+            titleLabel.textColor = NSColor.placeholderTextColor
+            titleLabel.alignment = .natural
+            toolbarItem.view = titleLabel
+//            toolbarItem.minSize = NSSize(width: 200, height: titleLabel.fittingSize.height)
+//            toolbarItem.maxSize = NSSize(width: 10000, height: titleLabel.fittingSize.height)
+            // toolbarItem.minSize = titleLabel.fittingSize
+            // toolbarItem.maxSize = titleLabel.fittingSize
+            toolbarItem.label = NSLocalizedString("Window Title", comment: "窗口标题")
+            toolbarItem.paletteLabel = NSLocalizedString("Window Title", comment: "窗口标题")
+            toolbarItem.visibilityPriority = .high
+            
+        case .pathControl:
+            let pathControl = CustomPathControl()
+            pathControl.pathStyle = .standard
+            pathControl.isEditable = false
+            pathControl.backgroundColor = .clear
+            pathControl.focusRingType = .none
+            pathControl.target = self
+            pathControl.action = #selector(pathControlClicked(_:))
+            let font = NSFont.systemFont(ofSize: 13, weight: .regular)
+            
+            if let viewController = contentViewController as? ViewController {
+                viewController.fileDB.lock()
+                let curFolder = viewController.fileDB.curFolder
+                viewController.fileDB.unlock()
+                var pathString = curFolder.replacingOccurrences(of: "file:///", with: "")
+                if pathString.hasPrefix("/") {
+                    pathString.removeFirst()
+                }
+                if pathString.hasSuffix("/") {
+                    pathString.removeLast()
+                }
+                let components = pathString.components(separatedBy: "/")
+                var pathItems: [CustomPathControlItem] = []
+                
+                let isVirtualFinderTagsFolder = pathString.hasPrefix("VirtualFinderTagsFolder")
+                
+                for (i,component) in components.enumerated() {
+                    if component == "" {continue}
+                    let item = CustomPathControlItem()
+                    item.title = component.removingPercentEncoding!
+
+                    let componentPath = components[0..<i + 1].joined(separator: "/")
+                    let encodedPath = "file:///\(componentPath)/"
+                    item.myUrl = URL(string: encodedPath)
+
+                    if isVirtualFinderTagsFolder && i == 0 {
+                        item.title = NSLocalizedString("Finder Tags", comment: "Finder标签")
+                    }
+
+                    pathItems.append(item)
+                }
+                
+                if !isVirtualFinderTagsFolder {
+                    let rootItem = CustomPathControlItem()
+                    rootItem.title = ROOT_NAME
+                    rootItem.myUrl = URL(string: "file:///")
+                    pathItems.insert(rootItem, at: 0)
+                }
+                
+                pathItems.last?.myUrl = nil
+                pathControl.fullPathItems = pathItems
+            }
+            
+            for item in pathControl.pathItems {
+                let range = NSMakeRange(0, item.attributedTitle.length)
+                let attributedTitle = NSMutableAttributedString(attributedString: item.attributedTitle)
+                attributedTitle.addAttribute(.foregroundColor, value: titleFontColor, range: range)
+                attributedTitle.addAttribute(.font, value: font, range: range)
+                item.attributedTitle = attributedTitle
+            }
+            
+            toolbarItem.view = pathControl
+            toolbarItem.label = NSLocalizedString("Window Title", comment: "窗口标题")
+            toolbarItem.paletteLabel = NSLocalizedString("Window Title", comment: "窗口标题") 
+            toolbarItem.visibilityPriority = .high
+            
+        case .sidebar:
+            let button = NSButton(title: "", image: NSImage(systemSymbolName: "sidebar.left", accessibilityDescription: "")!, target: self, action: #selector(sidebarAction(_:)))
+            setButtonStyle(button)
+            button.toolTip = NSLocalizedString("Sidebar", comment: "侧边栏")
+            button.isEnabled = !viewController.publicVar.isInLargeView
+            toolbarItem.view = button
+            toolbarItem.label = NSLocalizedString("Sidebar", comment: "侧边栏")
+            toolbarItem.paletteLabel = NSLocalizedString("Sidebar", comment: "侧边栏")
+            toolbarItem.isNavigational = true
+            toolbarItem.visibilityPriority = .low
+            
+        case .favorites:
+            let button = NSButton(title: "", image: NSImage(systemSymbolName: "star", accessibilityDescription: "")!, target: self, action: #selector(favoritesAction(_:)))
+            setButtonStyle(button)
+            button.toolTip = NSLocalizedString("Favorites", comment: "收藏夹")
+            toolbarItem.view = button
+            toolbarItem.label = NSLocalizedString("Favorites", comment: "收藏夹")
+            toolbarItem.paletteLabel = NSLocalizedString("Favorites", comment: "收藏夹")
+            toolbarItem.isNavigational = true
+            toolbarItem.visibilityPriority = .low
+            
+        case .goBack:
+            let button = NSButton(title: "", image: NSImage(systemSymbolName: "chevron.backward", accessibilityDescription: "")!, target: self, action: #selector(goBackAction(_:)))
+            setButtonStyle(button)
+            button.toolTip = NSLocalizedString("Go Back", comment: "后退")
+            button.isEnabled = (viewController.publicVar.folderStepStack.count > 0) && (!viewController.publicVar.isInLargeView)
+            toolbarItem.view = button
+            toolbarItem.label = NSLocalizedString("Go Back", comment: "后退")
+            toolbarItem.paletteLabel = NSLocalizedString("Go Back", comment: "后退")
+            toolbarItem.isNavigational = true
+            toolbarItem.visibilityPriority = .low
+            
+        case .goForward:
+            let button = NSButton(title: "", image: NSImage(systemSymbolName: "chevron.forward", accessibilityDescription: "")!, target: self, action: #selector(goForwardAction(_:)))
+            setButtonStyle(button)
+            button.toolTip = NSLocalizedString("Go Forward", comment: "前进")
+            button.isEnabled = (viewController.publicVar.folderStepForwardStack.count > 0) && (!viewController.publicVar.isInLargeView)
+            toolbarItem.view = button
+            toolbarItem.label = NSLocalizedString("Go Forward", comment: "前进")
+            toolbarItem.paletteLabel = NSLocalizedString("Go Forward", comment: "前进")
+            toolbarItem.isNavigational = true
+            toolbarItem.visibilityPriority = .low
+            
+        case .upFolder:
+            let button = NSButton(title: "", image: NSImage(systemSymbolName: "chevron.up", accessibilityDescription: "")!, target: self, action: #selector(upFolderAction(_:)))
+            setButtonStyle(button)
+            button.toolTip = NSLocalizedString("up-folder", comment: "上层文件夹")
+            toolbarItem.view = button
+            toolbarItem.label = NSLocalizedString("up-folder", comment: "上层文件夹")
+            toolbarItem.paletteLabel = NSLocalizedString("up-folder", comment: "上层文件夹")
+            toolbarItem.visibilityPriority = .low
+
+        case .tagging:
+            let hasFilter = !viewController.publicVar.finderTagFilters.isEmpty || !viewController.publicVar.ratingFilters.isEmpty || viewController.publicVar.isAIFilterOn
+            let symbolName = hasFilter ? "tag.fill" : "tag"
+            let button = NSButton(title: "", image: NSImage(systemSymbolName: symbolName, accessibilityDescription: "")!, target: self, action: #selector(taggingAction(_:)))
+            setButtonStyle(button)
+            if hasFilter {
+                button.setButtonType(.toggle)
+                button.state = .on
+                button.contentTintColor = .controlAccentColor
+            } else {
+                button.setButtonType(.momentaryPushIn)
+                button.contentTintColor = nil
+            }
+            button.toolTip = NSLocalizedString("Tagging", comment: "标签")
+            toolbarItem.view = button
+            toolbarItem.label = NSLocalizedString("Tagging", comment: "标签")
+            toolbarItem.paletteLabel = NSLocalizedString("Tagging", comment: "标签")
+            toolbarItem.visibilityPriority = .low
+            
+        case .viewToggle:
+            let segmentedControl = NSSegmentedControl(images: [
+                // NSImage(systemSymbolName: "rectangle.grid.1x2", accessibilityDescription: "Justified")!,
+                NSImage(systemSymbolName: "squares.below.rectangle", accessibilityDescription: "Justified")!,
+                NSImage(systemSymbolName: "rectangle.3.offgrid", accessibilityDescription: "Waterfall")!,
+                NSImage(systemSymbolName: "rectangle.grid.2x2", accessibilityDescription: "Grid")!
+            ], trackingMode: .selectOne, target: self, action: #selector(viewToggleAction(_:)))
+            segmentedControl.selectedSegment = viewController.publicVar.profile.layoutType.rawValue
+            segmentedControl.segmentStyle = .automatic
+            segmentedControl.setToolTip(NSLocalizedString("Justified View", comment: "自适应视图"), forSegment: 0)
+            segmentedControl.setToolTip(NSLocalizedString("Waterfall View", comment: "瀑布流视图"), forSegment: 1)
+            segmentedControl.setToolTip(NSLocalizedString("Grid View", comment: "网格视图"), forSegment: 2)
+            toolbarItem.view = segmentedControl
+            toolbarItem.label = NSLocalizedString("View", comment: "视图")
+            toolbarItem.paletteLabel = NSLocalizedString("View", comment: "视图")
+            // toolbarItem.toolTip = NSLocalizedString("View", comment: "视图")
+            toolbarItem.visibilityPriority = .low
+            
+        case .ontop:
+            var image: NSImage
+            if window?.level == .floating {
+                image = NSImage(systemSymbolName: "pin.circle.fill", accessibilityDescription: "")!
+            }else{
+                image = NSImage(systemSymbolName: "pin.circle", accessibilityDescription: "")!
+            }
+            let button = NSButton(title: "", image: image, target: self, action: #selector(ontopAction(_:)))
+            setButtonStyle(button)
+            button.toolTip = NSLocalizedString("Pin Window", comment: "置顶")
+            toolbarItem.view = button
+            toolbarItem.label = NSLocalizedString("Pin Window", comment: "置顶")
+            toolbarItem.paletteLabel = NSLocalizedString("Pin Window", comment: "置顶")
+            toolbarItem.visibilityPriority = .standard
+
+        case .isEnableHDR:
+            let button: NSButton
+            if viewController.publicVar.isEnableHDR {
+                button = NSButton(title: "HDR", target: self, action: #selector(toggleEnableHDR(_:)))
+                button.contentTintColor = .controlAccentColor
+            } else {
+                button = NSButton(title: "SDR", target: self, action: #selector(toggleEnableHDR(_:)))
+                button.contentTintColor = .secondaryLabelColor
+            }
+            setButtonStyle(button)
+            button.toolTip = NSLocalizedString("Enable HDR", comment: "启用HDR")
+            toolbarItem.view = button
+            toolbarItem.label = NSLocalizedString("Enable HDR", comment: "启用HDR")
+            toolbarItem.paletteLabel = NSLocalizedString("Enable HDR", comment: "启用HDR")
+            toolbarItem.visibilityPriority = .low
+        
+        case .showinfo:
+            var image: NSImage
+            if viewController.publicVar.isShowExif {
+                image = NSImage(systemSymbolName: "info.circle.fill", accessibilityDescription: "")!
+            }else{
+                image = NSImage(systemSymbolName: "info.circle", accessibilityDescription: "")!
+            }
+            let button = NSButton(title: "", image: image, target: self, action: #selector(showinfoAction(_:)))
+            setButtonStyle(button)
+            button.toolTip = NSLocalizedString("Show Info", comment: "显示信息")
+            toolbarItem.view = button
+            toolbarItem.label = NSLocalizedString("Show Info", comment: "显示信息")
+            toolbarItem.paletteLabel = NSLocalizedString("Show Info", comment: "显示信息")
+            toolbarItem.visibilityPriority = .standard
+            
+        case .rotateL:
+            let button = NSButton(title: "", image: NSImage(systemSymbolName: "arrow.counterclockwise", accessibilityDescription: "")!, target: self, action: #selector(rotateLAction(_:)))
+            setButtonStyle(button)
+            button.toolTip = NSLocalizedString("Rotate Counterclockwise", comment: "逆时针旋转")
+            toolbarItem.view = button
+            toolbarItem.label = NSLocalizedString("Rotate Counterclockwise", comment: "逆时针旋转")
+            toolbarItem.paletteLabel = NSLocalizedString("Rotate Counterclockwise", comment: "逆时针旋转")
+            toolbarItem.visibilityPriority = .low
+            
+        case .rotateR:
+            let button = NSButton(title: "", image: NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: "")!, target: self, action: #selector(rotateRAction(_:)))
+            setButtonStyle(button)
+            button.toolTip = NSLocalizedString("Rotate Clockwise", comment: "顺时针旋转")
+            toolbarItem.view = button
+            toolbarItem.label = NSLocalizedString("Rotate Clockwise", comment: "顺时针旋转")
+            toolbarItem.paletteLabel = NSLocalizedString("Rotate Clockwise", comment: "顺时针旋转")
+            toolbarItem.visibilityPriority = .low
+            
+        case .zoomIn:
+            let button = NSButton(title: "", image: NSImage(systemSymbolName: "plus", accessibilityDescription: "")!, target: self, action: #selector(zoomInAction(_:)))
+            setButtonStyle(button)
+            button.toolTip = NSLocalizedString("Zoom In", comment: "放大")
+            toolbarItem.view = button
+            toolbarItem.label = NSLocalizedString("Zoom In", comment: "放大")
+            toolbarItem.paletteLabel = NSLocalizedString("Zoom In", comment: "放大")
+            toolbarItem.visibilityPriority = .low
+            
+        case .zoomOut:
+            let button = NSButton(title: "", image: NSImage(systemSymbolName: "minus", accessibilityDescription: "")!, target: self, action: #selector(zoomOutAction(_:)))
+            setButtonStyle(button)
+            button.toolTip = NSLocalizedString("Zoom Out", comment: "缩小")
+            toolbarItem.view = button
+            toolbarItem.label = NSLocalizedString("Zoom Out", comment: "缩小")
+            toolbarItem.paletteLabel = NSLocalizedString("Zoom Out", comment: "缩小")
+            toolbarItem.visibilityPriority = .low
+            
+        case .sort:
+            var title = ""
+            var image = NSImage(systemSymbolName: "arrow.up.arrow.down", accessibilityDescription: "")!
+            if let viewController = contentViewController as? ViewController {
+                switch viewController.publicVar.profile.sortType {
+                case .pathA,.pathZ:
+                    title = NSLocalizedString("sort-label-name", comment: "名称")
+                case .extA,.extZ:
+                    title = NSLocalizedString("sort-label-ext", comment: "类型")
+                case .sizeA,.sizeZ:
+                    title = NSLocalizedString("sort-label-size", comment: "大小")
+                case .createDateA,.createDateZ,.modDateA,.modDateZ,.addDateA,.addDateZ:
+                    title = NSLocalizedString("sort-label-date", comment: "日期")
+                case .random:
+                    title = NSLocalizedString("sort-label-random", comment: "随机")
+                case .exifDateA,.exifDateZ:
+                    title = NSLocalizedString("sort-label-exifDate", comment: "Exif日期")
+                case .exifPixelA,.exifPixelZ:
+                    title = NSLocalizedString("sort-label-exifPixel", comment: "Exif像素")
+                case .ratingA,.ratingZ:
+                    title = NSLocalizedString("sort-label-rating", comment: "XMP评级")
+                case .tagA,.tagZ:
+                    title = NSLocalizedString("sort-label-tag", comment: "Finder标签")
+                }
+                switch viewController.publicVar.profile.sortType {
+                case .pathA,.extA,.sizeA,.createDateA,.modDateA,.addDateA,.exifDateA,.exifPixelA,.ratingA,.tagA:
+                    // image = NSImage(systemSymbolName: "arrow.up", accessibilityDescription: "")!
+                    // image = NSImage(systemSymbolName: "arrowtriangle.up", accessibilityDescription: "")!
+                    image = NSImage(systemSymbolName: "chevron.up.circle", accessibilityDescription: "")!
+                case .pathZ,.extZ,.sizeZ,.createDateZ,.modDateZ,.addDateZ,.exifDateZ,.exifPixelZ,.ratingZ,.tagZ:
+                    image = NSImage(systemSymbolName: "chevron.down.circle", accessibilityDescription: "")!
+                case .random:
+                    // image = NSImage(systemSymbolName: "arrow.up.arrow.down.circle", accessibilityDescription: "")!
+                    image = NSImage(systemSymbolName: "arrow.2.circlepath", accessibilityDescription: "")!
+                }
+            }
+            
+            let button = NSButton(title: title, image: image, target: self, action: #selector(showSortMenu(_:)))
+            setButtonStyle(button)
+            
+            // 自定义title的字体大小和颜色
+            // Customize title font size and color
+            let font = NSFont.systemFont(ofSize: 13)
+            let attributedTitle = NSAttributedString(string: title, attributes: [
+                .font: font,
+                // .foregroundColor: titleFontColor
+            ])
+            button.attributedTitle = attributedTitle
+            button.toolTip = NSLocalizedString("Sort Order", comment: "排序方式")
+            toolbarItem.view = button
+            toolbarItem.label = NSLocalizedString("Sort Order", comment: "排序方式")
+            toolbarItem.paletteLabel = NSLocalizedString("Sort Order", comment: "排序方式")
+            toolbarItem.visibilityPriority = .low
+            
+        case .thumbSize:
+            let button = NSButton(title: "", image: NSImage(systemSymbolName: "photo", accessibilityDescription: "")!, target: self, action: #selector(showThumbSizeMenu(_:)))
+            setButtonStyle(button)
+            button.toolTip = NSLocalizedString("Thumbnail Size", comment: "缩略图大小")
+            toolbarItem.view = button
+            toolbarItem.label = NSLocalizedString("Thumbnail Size", comment: "缩略图大小")
+            toolbarItem.paletteLabel = NSLocalizedString("Thumbnail Size", comment: "缩略图大小")
+            toolbarItem.visibilityPriority = .low
+            
+        case .isAutoPlayVisibleVideo:
+            let button = NSButton(title: "", image: NSImage(systemSymbolName: "video.circle.fill", accessibilityDescription: "")!, target: self, action: #selector(toggleAutoPlayVisibleVideo(_:)))
+            setButtonStyle(button)
+            button.toolTip = NSLocalizedString("Cancel Auto Play Visible Video", comment: "取消自动播放可见视频")
+            toolbarItem.view = button
+            toolbarItem.label = NSLocalizedString("Cancel Auto Play Visible Video", comment: "取消自动播放可见视频")
+            toolbarItem.paletteLabel = NSLocalizedString("Cancel Auto Play Visible Video", comment: "取消自动播放可见视频")
+            toolbarItem.visibilityPriority = .low
+            
+        case .isSearchFilterOn:
+            let button = NSButton(title: "", image: NSImage(systemSymbolName: "magnifyingglass.circle.fill", accessibilityDescription: "")!, target: self, action: #selector(toggleSearchFilter(_:)))
+            setButtonStyle(button)
+            // button.showsBorderOnlyWhileMouseInside = false
+            button.toolTip = NSLocalizedString("Cancel Filter", comment: "取消过滤")
+            toolbarItem.view = button
+            toolbarItem.label = NSLocalizedString("Cancel Filter", comment: "取消过滤")
+            toolbarItem.paletteLabel = NSLocalizedString("Cancel Filter", comment: "取消过滤")
+            toolbarItem.visibilityPriority = .low
+
+        case .isTagFilterOn:
+            let button = NSButton(title: "", image: NSImage(systemSymbolName: "tag.circle.fill", accessibilityDescription: "")!, target: self, action: #selector(toggleClearTagFilter(_:)))
+            setButtonStyle(button)
+            // button.showsBorderOnlyWhileMouseInside = false
+            button.toolTip = NSLocalizedString("Cancel Filter", comment: "取消过滤")
+            toolbarItem.view = button
+            toolbarItem.label = NSLocalizedString("Cancel Filter", comment: "取消过滤")
+            toolbarItem.paletteLabel = NSLocalizedString("Cancel Filter", comment: "取消过滤")
+            toolbarItem.visibilityPriority = .low
+            
+        case .isRatingFilterOn:
+            let button = NSButton(title: "", image: NSImage(systemSymbolName: "star.circle.fill", accessibilityDescription: "")!, target: self, action: #selector(toggleClearRatingFilter(_:)))
+            setButtonStyle(button)
+            button.toolTip = NSLocalizedString("Cancel Filter", comment: "取消过滤")
+            toolbarItem.view = button
+            toolbarItem.label = NSLocalizedString("Cancel Filter", comment: "取消过滤")
+            toolbarItem.paletteLabel = NSLocalizedString("Cancel Filter", comment: "取消过滤")
+            toolbarItem.visibilityPriority = .low
+
+        case .isRecursiveMode:
+            let button = NSButton(title: "", image: NSImage(systemSymbolName: "rectangle.fill.on.rectangle.fill.circle.fill", accessibilityDescription: "")!, target: self, action: #selector(toggleRecursiveMode(_:)))
+            setButtonStyle(button)
+            // button.showsBorderOnlyWhileMouseInside = false
+            button.toolTip = NSLocalizedString("Exit Recursive Mode", comment: "退出递归浏览模式")
+            toolbarItem.view = button
+            toolbarItem.label = NSLocalizedString("Exit Recursive Mode", comment: "退出递归浏览模式")
+            toolbarItem.paletteLabel = NSLocalizedString("Exit Recursive Mode", comment: "退出递归浏览模式")
+            toolbarItem.visibilityPriority = .low
+            
+        case .more:
+            let button = NSButton(title: "", image: NSImage(systemSymbolName: "ellipsis.circle", accessibilityDescription: "")!, target: self, action: #selector(showMoreMenu(_:)))
+            setButtonStyle(button)
+            button.toolTip = NSLocalizedString("More", comment: "更多")
+            toolbarItem.view = button
+            toolbarItem.label = NSLocalizedString("More", comment: "更多")
+            toolbarItem.paletteLabel = NSLocalizedString("More", comment: "更多")
+            toolbarItem.visibilityPriority = .high
+            
+        case .newtab:
+            let button = NSButton(title: "", image: NSImage(systemSymbolName: "rectangle.badge.plus", accessibilityDescription: "")!, target: self, action: #selector(newtabAction(_:)))
+            setButtonStyle(button)
+            button.toolTip = NSLocalizedString("New Tab", comment: "新标签页")
+            toolbarItem.view = button
+            toolbarItem.label = NSLocalizedString("New Tab", comment: "新标签页")
+            toolbarItem.paletteLabel = NSLocalizedString("New Tab", comment: "新标签页")
+            toolbarItem.visibilityPriority = .high
+            
+        case NSToolbarItem.Identifier("CustomSeparator"):
+            let margin: CGFloat = 4
+            let lineWidth: CGFloat = 1
+            let height: CGFloat = 16
+            let containerWidth = margin * 2 + lineWidth
+            let containerView = NSView(frame: NSRect(x: 0, y: 0, width: containerWidth, height: height))
+            let line = NSBox()
+            line.boxType = .separator
+            line.frame = NSRect(x: margin, y: 0, width: lineWidth, height: height)
+            line.fillColor = NSColor.separatorColor
+            containerView.addSubview(line)
+            toolbarItem.view = containerView
+            toolbarItem.visibilityPriority = .low
+            
+        default:
+            return nil
+        }
+        return toolbarItem
+    }
+    
+    @objc func pathControlClicked(_ sender: NSPathControl) {
+        guard let viewController = contentViewController as? ViewController else {return}
+        if let clickedItem = sender.clickedPathItem as? CustomPathControlItem {
+            if let itemURL = clickedItem.myUrl {
+                if viewController.publicVar.isInLargeView {
+                    viewController.closeLargeImage(0)
+                }
+                viewController.switchDirByDirection(direction: .zero, dest: itemURL.absoluteString, doCollapse: true, expandLast: true, skip: false, stackDeep: 0)
+            }
+        }
+    }
+    
+    class NonClickableTextField: NSTextField {
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            // 忽略所有鼠标事件
+            // Ignore all mouse events
+            return nil
+        }
+    }
+    
+    private func createWindowTitleLabel(string: String) -> NSTextField {
+        let titleLabel = NonClickableTextField(labelWithString: string)
+        titleLabel.isBezeled = false
+        titleLabel.drawsBackground = false
+        titleLabel.isEditable = false
+        titleLabel.isSelectable = false
+        titleLabel.lineBreakMode = .byTruncatingHead
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        return titleLabel
+    }
+    
+    func setButtonStyle(_ button: NSButton) {
+        button.bezelStyle = .rounded
+        button.setButtonType(.momentaryPushIn)
+        button.isBordered = true
+//        button.bezelStyle = .toolbar
+        button.showsBorderOnlyWhileMouseInside = true
+    }
+    
+    @objc func sidebarAction(_ sender: Any?) {
+        if let viewController = contentViewController as? ViewController {
+            viewController.toggleSidebar()
+        }
+    }
+    
+    @objc func ontopAction(_ sender: Any?) {
+        toggleWindowOnTop()
+    }
+    
+    @objc func goBackAction(_ sender: Any?) {
+        if let viewController = contentViewController as? ViewController {
+            viewController.handleHistoryBack()
+        }
+    }
+
+    @objc func goForwardAction(_ sender: Any?) {
+        if let viewController = contentViewController as? ViewController {
+            viewController.handleHistoryForward()
+        }
+    }
+
+    @objc func upFolderAction(_ sender: Any?) {
+        if let viewController = contentViewController as? ViewController {
+            viewController.switchDirByDirection(direction: .up, stackDeep: 0)
+        }
+    }
+    
+    @objc func newtabAction(_ sender: Any?) {
+        if let appDelegate = NSApplication.shared.delegate as? AppDelegate,
+           let viewController = contentViewController as? ViewController {
+            viewController.fileDB.lock()
+            let curFolder = viewController.fileDB.curFolder
+            viewController.fileDB.unlock()
+            appDelegate.createNewWindow(curFolder)
+        }
+    }
+    
+    @objc func showinfoAction(_ sender: Any?) {
+        if let viewController = contentViewController as? ViewController {
+            viewController.largeImageView.actShowExif()
+        }
+    }
+    
+    @objc func rotateLAction(_ sender: Any?) {
+        if let viewController = contentViewController as? ViewController {
+            viewController.largeImageView.actRotateL()
+        }
+    }
+    
+    @objc func rotateRAction(_ sender: Any?) {
+        if let viewController = contentViewController as? ViewController {
+            viewController.largeImageView.actRotateR()
+        }
+    }
+    
+    @objc func zoomInAction(_ sender: Any?) {
+        if let viewController = contentViewController as? ViewController {
+            viewController.largeImageView.zoom(direction: +1)
+        }
+    }
+    
+    @objc func zoomOutAction(_ sender: Any?) {
+        if let viewController = contentViewController as? ViewController {
+            viewController.largeImageView.zoom(direction: -1)
+        }
+    }
+    
+    @objc func viewToggleAction(_ sender: NSSegmentedControl) {
+        guard let viewController = contentViewController as? ViewController else {return}
+        switch sender.selectedSegment {
+        case 0:
+            // 切换到自适应视图的代码
+            // Switch to justified view
+            viewController.switchToJustifiedView()
+        case 1:
+            // 切换到瀑布流视图的代码
+            // Switch to waterfall view
+            viewController.switchToWaterfallView()
+        case 2:
+            // 切换到网格视图的代码
+            // Switch to grid view
+            viewController.switchToGridView()
+        default:
+            break
+        }
+    }
+    
+    @objc func showSortMenu(_ sender: Any?) {
+        guard let viewController = contentViewController as? ViewController else {return}
+        // 图标映射
+        // Icon mapping
+        let sortTypeIcons: [SortType: NSImage?] = [
+            .pathA: NSImage(systemSymbolName: "square.and.pencil", accessibilityDescription: ""),
+            .pathZ: NSImage(systemSymbolName: "square.and.pencil", accessibilityDescription: ""),
+            .sizeA: NSImage(systemSymbolName: "arrow.up.left.and.arrow.down.right", accessibilityDescription: ""),
+            .sizeZ: NSImage(systemSymbolName: "arrow.up.left.and.arrow.down.right", accessibilityDescription: ""),
+            .extA: NSImage(systemSymbolName: "text.below.photo", accessibilityDescription: ""),
+            .extZ: NSImage(systemSymbolName: "text.below.photo", accessibilityDescription: ""),
+            .createDateA: NSImage(systemSymbolName: "clock", accessibilityDescription: ""),
+            .createDateZ: NSImage(systemSymbolName: "clock", accessibilityDescription: ""),
+            .modDateA: NSImage(systemSymbolName: "clock", accessibilityDescription: ""),
+            .modDateZ: NSImage(systemSymbolName: "clock", accessibilityDescription: ""),
+            .addDateA: NSImage(systemSymbolName: "clock", accessibilityDescription: ""),
+            .addDateZ: NSImage(systemSymbolName: "clock", accessibilityDescription: ""),
+            .random: NSImage(systemSymbolName: "arrow.2.circlepath", accessibilityDescription: ""),
+            .exifDateA: NSImage(systemSymbolName: "clock", accessibilityDescription: ""),
+            .exifDateZ: NSImage(systemSymbolName: "clock", accessibilityDescription: ""),
+            .exifPixelA: NSImage(systemSymbolName: "camera.aperture", accessibilityDescription: ""),
+            .exifPixelZ: NSImage(systemSymbolName: "camera.aperture", accessibilityDescription: ""),
+            .ratingA: NSImage(systemSymbolName: "star", accessibilityDescription: ""),
+            .ratingZ: NSImage(systemSymbolName: "star", accessibilityDescription: ""),
+            .tagA: NSImage(systemSymbolName: "tag", accessibilityDescription: ""),
+            .tagZ: NSImage(systemSymbolName: "tag", accessibilityDescription: "")
+        ]
+        let sortTypes: [(SortType, String)] = [
+            (.pathA, NSLocalizedString("sort-pathA", comment: "文件名")),
+            (.pathZ, NSLocalizedString("sort-pathZ", comment: "文件名(降序)")),
+            (.sizeA, NSLocalizedString("sort-sizeA", comment: "文件大小")),
+            (.sizeZ, NSLocalizedString("sort-sizeZ", comment: "文件大小(降序)")),
+            (.extA, NSLocalizedString("sort-extA", comment: "文件类型")),
+            (.extZ, NSLocalizedString("sort-extZ", comment: "文件类型(降序)")),
+            (.createDateA, NSLocalizedString("sort-createDateA", comment: "创建日期")),
+            (.createDateZ, NSLocalizedString("sort-createDateZ", comment: "创建日期(降序)")),
+            (.modDateA, NSLocalizedString("sort-modDateA", comment: "修改日期")),
+            (.modDateZ, NSLocalizedString("sort-modDateZ", comment: "修改日期(降序)")),
+            (.addDateA, NSLocalizedString("sort-addDateA", comment: "添加日期")),
+            (.addDateZ, NSLocalizedString("sort-addDateZ", comment: "添加日期(降序)")),
+            (.tagA, NSLocalizedString("sort-tagA", comment: "Finder标签")),
+            (.tagZ, NSLocalizedString("sort-tagZ", comment: "Finder标签(降序)")),
+            (.random, NSLocalizedString("sort-random", comment: "随机"))
+        ]
+        
+        let exifSortTypes: [(SortType, String)] = [
+            (.exifDateA, NSLocalizedString("sort-exifDateA", comment: "Exif日期")),
+            (.exifDateZ, NSLocalizedString("sort-exifDateZ", comment: "Exif日期(降序)")),
+            (.exifPixelA, NSLocalizedString("sort-exifPixelA", comment: "Exif像素数")),
+            (.exifPixelZ, NSLocalizedString("sort-exifPixelZ", comment: "Exif像素数(降序)")),
+            (.ratingA, NSLocalizedString("sort-ratingA", comment: "XMP评级")),
+            (.ratingZ, NSLocalizedString("sort-ratingZ", comment: "XMP评级(降序)"))
+        ]
+        
+        let menu = NSMenu()
+        
+        let folderFirstItem = NSMenuItem(title: NSLocalizedString("Sort Folders First", comment: "文件夹优先排序"), action: #selector(sortFolderFirst(_:)), keyEquivalent: "")
+        folderFirstItem.state = viewController.publicVar.profile.isSortFolderFirst ? .on : .off
+        menu.addItem(folderFirstItem)
+
+        let sortUseFullPathItem = NSMenuItem(title: NSLocalizedString("Sort Using Full Path In Collection Mode", comment: "集合模式下使用完整路径排序"), action: #selector(sortUseFullPath(_:)), keyEquivalent: "")
+        sortUseFullPathItem.state = viewController.publicVar.profile.isSortUseFullPath ? .on : .off
+        menu.addItem(sortUseFullPathItem)
+
+        let sortReadme = menu.addItem(withTitle: NSLocalizedString("Readme...", comment: "说明..."), action: #selector(sortReadmeAction), keyEquivalent: "")
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        for (sortType, title) in sortTypes {
+            let menuItem = NSMenuItem(title: title, action: #selector(sortItems(_:)), keyEquivalent: "")
+            menuItem.target = self
+            menuItem.representedObject = sortType
+            let curSortType = viewController.publicVar.profile.sortType
+            menuItem.state = curSortType == sortType ? .on : .off
+            if let icon = sortTypeIcons[sortType] ?? nil {
+                menuItem.image = icon
+            }
+            menu.addItem(menuItem)
+        }
+        
+        // 添加 EXIF 排序子菜单
+        // Add EXIF sorting submenu
+        let exifSubmenu = NSMenu()
+        let exifMenuItem = NSMenuItem(title: NSLocalizedString("Sort by EXIF Info", comment: "根据Exif信息排序"), action: nil, keyEquivalent: "")
+        exifMenuItem.image = NSImage(systemSymbolName: "camera", accessibilityDescription: "")
+        exifMenuItem.submenu = exifSubmenu
+        
+        for (sortType, title) in exifSortTypes {
+            let menuItem = NSMenuItem(title: title, action: #selector(sortItems(_:)), keyEquivalent: "")
+            menuItem.target = self
+            menuItem.representedObject = sortType
+            let curSortType = viewController.publicVar.profile.sortType
+            menuItem.state = curSortType == sortType ? .on : .off
+            if let icon = sortTypeIcons[sortType] ?? nil {
+                menuItem.image = icon
+            }
+            exifSubmenu.addItem(menuItem)
+        }
+        
+        menu.addItem(exifMenuItem)
+        
+        if let button = sender as? NSButton {
+            let buttonFrame = button.convert(button.bounds, to: nil)
+            let menuLocation = NSPoint(x: 0, y: buttonFrame.height + 4)
+            menu.popUp(positioning: nil, at: menuLocation, in: button)
+        } else {
+            let menuLocation = NSEvent.mouseLocation
+            menu.popUp(positioning: nil, at: menuLocation, in: nil)
+        }
+    }
+
+    @objc func sortReadmeAction(_ sender: NSMenuItem) {
+        showInformationLong(title: NSLocalizedString("Info", comment: "说明"), message: NSLocalizedString("sort-readme", comment: "排序说明..."))
+    }
+    
+    @objc func sortFolderFirst(_ sender: NSMenuItem) {
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.publicVar.profile.isSortFolderFirst.toggle()
+        viewController.changeSortType(sortType: viewController.publicVar.profile.sortType, isSortFolderFirst: viewController.publicVar.profile.isSortFolderFirst, isSortUseFullPath: viewController.publicVar.profile.isSortUseFullPath)
+    }
+    
+    @objc func sortUseFullPath(_ sender: NSMenuItem) {
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.publicVar.profile.isSortUseFullPath.toggle()
+        viewController.changeSortType(sortType: viewController.publicVar.profile.sortType, isSortFolderFirst: viewController.publicVar.profile.isSortFolderFirst, isSortUseFullPath: viewController.publicVar.profile.isSortUseFullPath)
+    }
+    
+    @objc func sortItems(_ sender: NSMenuItem) {
+        guard let sortType = sender.representedObject as? SortType else { return }
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.changeSortType(sortType: sortType, isSortFolderFirst: viewController.publicVar.profile.isSortFolderFirst, isSortUseFullPath: viewController.publicVar.profile.isSortUseFullPath)
+    }
+    
+    @objc func favoritesAction(_ sender: Any?) {
+        if let existingPopover = favoritesPopover, existingPopover.isShown {
+            existingPopover.close()
+            favoritesPopover = nil
+            return
+        }
+        
+        let favVC = FavoritesPopoverViewController()
+        favVC.onNavigate = { [weak self] path in
+            guard let self = self,
+                  let viewController = self.contentViewController as? ViewController else { return }
+            guard let url = URL(string: getFileSchemeAbsPath(path)) else { return }
+            if viewController.publicVar.isInLargeView {
+                viewController.closeLargeImage(0)
+            }
+            viewController.switchDirByDirection(direction: .zero, dest: url.absoluteString, doCollapse: true, expandLast: true, skip: false, stackDeep: 0)
+        }
+        favVC.onGetCurrentFolder = { [weak self] in
+            guard let viewController = self?.contentViewController as? ViewController else { return nil }
+            viewController.fileDB.lock()
+            let curFolder = viewController.fileDB.curFolder
+            viewController.fileDB.unlock()
+            return curFolder
+        }
+        
+        let popover = NSPopover()
+        popover.contentViewController = favVC
+        // Anchor to window contentView so auto-hiding toolbar won't immediately dismiss it.
+        popover.behavior = .semitransient
+        popover.animates = false
+        popover.contentSize = NSSize(width: 400, height: 600)
+        favVC.popover = popover
+        
+        self.favoritesPopover = popover
+        
+        guard let window = self.window, let contentView = window.contentView else { return }
+        
+        // Toolbar items sit above contentView; converting the button rect into contentView coords
+        // often lands outside bounds, and NSPopover then won't appear. Clamp to the visible top edge.
+        let b = contentView.bounds
+        let targetRectInContentView: NSRect
+        if let button = sender as? NSButton, button.window === window {
+            let rectInWindow = button.convert(button.bounds, to: nil)
+            var r = contentView.convert(rectInWindow, from: nil)
+            if !b.intersects(r) {
+                let midX = min(max(r.midX, b.minX + 20), b.maxX - 20)
+                r = contentView.isFlipped
+                    ? NSRect(x: midX - 0.5, y: b.minY + 1, width: 1, height: 1)
+                    : NSRect(x: midX - 0.5, y: b.maxY - 1, width: 1, height: 1)
+            }
+            targetRectInContentView = r
+            let preferredEdge: NSRectEdge = contentView.isFlipped ? .maxY : .minY
+            popover.show(relativeTo: targetRectInContentView, of: contentView, preferredEdge: preferredEdge)
+        }
+    }
+
+    @objc func taggingAction(_ sender: Any?) {
+        guard let viewController = contentViewController as? ViewController else { return }
+        let collectionView = viewController.collectionView!
+        
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        
+        // let isInLargeView = viewController.publicVar.isInLargeView
+        // let hasSelection = !collectionView.selectionIndexPaths.isEmpty
+        // let taggingEnabled = isInLargeView || hasSelection
+        
+        // let activeTagNames: Set<String>
+        // let isRatingEnabled: Bool
+        // if isInLargeView {
+        //     let currentTags = viewController.largeImageView.file.finderTags
+        //     activeTagNames = Set(FinderTag.all.filter { currentTags.contains($0.name) }.map { $0.name })
+        //     isRatingEnabled = viewController.largeImageView.file.type == .image
+        // } else if hasSelection {
+        //     let selectedURLs = viewController.publicVar.selectedUrls()
+        //     let tagsPerURL = selectedURLs.map { FinderTagHelper.readTags(from: $0) }
+        //     activeTagNames = Set(FinderTag.all.filter { tag in
+        //         tagsPerURL.allSatisfy { $0.contains(tag.name) }
+        //     }.map { $0.name })
+        //     isRatingEnabled = collectionView.selectionIndexPaths.allSatisfy { indexPath in
+        //         (collectionView.item(at: indexPath) as? CustomCollectionViewItem)?.file.type == .image
+        //     }
+        // } else {
+        //     activeTagNames = []
+        //     isRatingEnabled = false
+        // }
+        
+        // menu.addTaggingMenuItems(
+        //     activeTagNames: activeTagNames,
+        //     target: self,
+        //     isRatingEnabled: isRatingEnabled,
+        //     isEnabled: taggingEnabled
+        // ) { tagName in
+        //     viewController.handleToggleFinderTag(tagName)
+        // }
+
+        // menu.addItem(NSMenuItem.separator())
+
+        // 当前过滤状态 + 清除所有过滤条件
+        var filterParts: [String] = []
+        if !viewController.publicVar.finderTagFilters.isEmpty {
+            let names = viewController.publicVar.finderTagFilters.sorted().joined(separator: ", ")
+            var tagDesc = NSLocalizedString("Tag", comment: "标签") + ": " + names
+            if viewController.publicVar.isFinderTagFilterModeAnd {
+                tagDesc += " (AND)"
+            }
+            if viewController.publicVar.isFinderTagFilterReversed {
+                tagDesc += " (" + NSLocalizedString("Reversed", comment: "过滤条件反转") + ")"
+            }
+            filterParts.append(tagDesc)
+        }
+        if !viewController.publicVar.ratingFilters.isEmpty {
+            let stars = viewController.publicVar.ratingFilters.sorted().map {
+                $0 == 0 ? NSLocalizedString("No Rating", comment: "无评级") : String(repeating: "★", count: $0)
+            }.joined(separator: ", ")
+            var ratingDesc = NSLocalizedString("Rating", comment: "评级") + ": " + stars
+            if viewController.publicVar.isRatingFilterReversed {
+                ratingDesc += " (" + NSLocalizedString("Reversed", comment: "过滤条件反转") + ")"
+            }
+            filterParts.append(ratingDesc)
+        }
+        if viewController.publicVar.isAIFilterOn {
+            filterParts.append("AI")
+        }
+
+        let hasActiveFilter = !filterParts.isEmpty
+        let statusTitle = hasActiveFilter
+            ? NSLocalizedString("Current Filter", comment: "当前过滤") + ": " + filterParts.joined(separator: " & ")
+            : NSLocalizedString("Current Filter", comment: "当前过滤") + ": " + NSLocalizedString("None", comment: "无")
+        let statusItem = menu.addItem(withTitle: statusTitle, action: nil, keyEquivalent: "")
+        statusItem.isEnabled = false
+
+        let clearItem = menu.addItem(withTitle: NSLocalizedString("Clear All Filters", comment: "清除所有过滤条件"), action: #selector(actClearAllTagsAndRatingFilters), keyEquivalent: "")
+        clearItem.isEnabled = hasActiveFilter
+
+        menu.addItem(NSMenuItem.separator())
+        
+        collectionView.buildFilterMenuItems(in: menu)
+        
+        if let button = sender as? NSButton {
+            let menuLocation = NSPoint(x: 0, y: button.bounds.height + 4)
+            menu.popUp(positioning: nil, at: menuLocation, in: button)
+        } else {
+            let menuLocation = NSEvent.mouseLocation
+            menu.popUp(positioning: nil, at: menuLocation, in: nil)
+        }
+    }
+    
+    @objc func actToggleFinderTag(_ sender: NSMenuItem) {
+        guard let tagName = sender.representedObject as? String else { return }
+        guard let viewController = contentViewController as? ViewController else { return }
+        viewController.handleToggleFinderTag(tagName)
+    }
+
+    @objc func actRemoveAllFinderTags() {
+        guard let viewController = contentViewController as? ViewController else { return }
+        viewController.handleRemoveAllFinderTags()
+    }
+
+    @objc func actTagLearnMore() {
+        guard let viewController = contentViewController as? ViewController else { return }
+        viewController.handleTagLearnMore()
+    }
+
+    @objc func actRate(_ sender: NSMenuItem) {
+        guard let viewController = contentViewController as? ViewController else { return }
+        viewController.handleRating(rating: sender.tag)
+    }
+
+    @objc func actRateReadmeAction() {
+        guard let viewController = contentViewController as? ViewController else { return }
+        viewController.handleRatingReadme()
+    }
+
+    @objc func showThumbSizeMenu(_ sender: Any?) {
+        guard let viewController = contentViewController as? ViewController else {return}
+
+        let thumbSizeOptions = THUMB_SIZES.map { ($0, "\($0) × \($0)") }
+        
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        let isPreferInternalThumb = menu.addItem(withTitle: NSLocalizedString("Prefer Using Embedded Thumbnails", comment: "优先使用内嵌缩略图"), action: #selector(preferInternalThumbAction), keyEquivalent: "")
+        isPreferInternalThumb.state = (viewController.publicVar.isPreferInternalThumb) ? .on : .off
+
+        let isNormalThumb = menu.addItem(withTitle: NSLocalizedString("Always Generate Standard Thumbnails", comment: "总是生成标准缩略图"), action: #selector(normalThumbAction), keyEquivalent: "")
+        isNormalThumb.state = (!viewController.publicVar.isPreferInternalThumb && !viewController.publicVar.isGenHdThumb) ? .on : .off
+
+        let isGenHdThumb = menu.addItem(withTitle: NSLocalizedString("Always Generate HD Thumbnails", comment: "总是生成高清缩略图"), action: #selector(genHdThumbAction), keyEquivalent: "")
+        isGenHdThumb.state = (viewController.publicVar.isGenHdThumb) ? .on : .off
+        
+        let thumbReadme = menu.addItem(withTitle: NSLocalizedString("Readme...", comment: "说明..."), action: #selector(thumbReadmeAction), keyEquivalent: "")
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        let enlargeThumb = menu.addItem(withTitle: NSLocalizedString("Enlarge the Thumbnails", comment: "放大缩略图"), action: #selector(enlargeThumb), keyEquivalent: "+")
+        enlargeThumb.keyEquivalentModifierMask = []
+        
+        let reduceThumb = menu.addItem(withTitle: NSLocalizedString("Reduce the Thumbnails", comment: "缩小缩略图"), action: #selector(reduceThumb), keyEquivalent: "-")
+        reduceThumb.keyEquivalentModifierMask = []
+        
+        let defaultThumbSize = menu.addItem(withTitle: NSLocalizedString("Default Thumbnail Size", comment: "默认缩略图大小"), action: #selector(defaultThumbSize), keyEquivalent: "0")
+        defaultThumbSize.keyEquivalentModifierMask = []
+        
+//        menu.addItem(NSMenuItem.separator())
+//        
+//        for (thumbSize, title) in thumbSizeOptions {
+//            let menuItem = NSMenuItem(title: title, action: #selector(selectThumbSize(_:)), keyEquivalent: "")
+//            menuItem.target = self
+//            menuItem.representedObject = thumbSize
+//            let curSortType = viewController.publicVar.thumbSize
+//            if viewController.publicVar.layoutType == .grid {
+//                menuItem.isEnabled = false
+//            }else{
+//                menuItem.state = curSortType == thumbSize ? .on : .off
+//            }
+//            menu.addItem(menuItem)
+//        }
+        
+        
+        if let button = sender as? NSButton {
+            let buttonFrame = button.convert(button.bounds, to: nil)
+            let menuLocation = NSPoint(x: 0, y: buttonFrame.height + 4)
+            menu.popUp(positioning: nil, at: menuLocation, in: button)
+        } else {
+            let menuLocation = NSEvent.mouseLocation
+            menu.popUp(positioning: nil, at: menuLocation, in: nil)
+        }
+    }
+
+    @objc func preferInternalThumbAction(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.publicVar.isPreferInternalThumb = true
+        viewController.publicVar.isGenHdThumb = false
+        UserDefaults.standard.set(viewController.publicVar.isPreferInternalThumb, forKey: "isPreferInternalThumb")
+        UserDefaults.standard.set(viewController.publicVar.isGenHdThumb, forKey: "isGenHdThumb")
+        ThumbImageProcessor.clearCache()
+        viewController.refreshCollectionView([.all], dryRun: true, needLoadThumbPriority: false)
+    }
+
+    @objc func normalThumbAction(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.publicVar.isPreferInternalThumb = false
+        viewController.publicVar.isGenHdThumb = false
+        UserDefaults.standard.set(viewController.publicVar.isPreferInternalThumb, forKey: "isPreferInternalThumb")
+        UserDefaults.standard.set(viewController.publicVar.isGenHdThumb, forKey: "isGenHdThumb")
+        ThumbImageProcessor.clearCache()
+        viewController.refreshCollectionView([.all], dryRun: true, needLoadThumbPriority: false)
+    }
+    
+    @objc func genHdThumbAction(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.publicVar.isGenHdThumb = true
+        viewController.publicVar.isPreferInternalThumb = false
+        UserDefaults.standard.set(viewController.publicVar.isGenHdThumb, forKey: "isGenHdThumb")
+        UserDefaults.standard.set(viewController.publicVar.isPreferInternalThumb, forKey: "isPreferInternalThumb")
+        ThumbImageProcessor.clearCache()
+        viewController.refreshCollectionView([.all], dryRun: true, needLoadThumbPriority: false)
+    }
+    
+    @objc func thumbReadmeAction(_ sender: NSMenuItem){
+        showInformationLong(title: NSLocalizedString("Info", comment: "说明"), message: NSLocalizedString("gen-thumb-info", comment: "对于高清缩略图的说明..."))
+    }
+    
+    @objc func enlargeThumb(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.adjustThumbSizeByDirection(direction: +1)
+    }
+    
+    @objc func defaultThumbSize(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.adjustThumbSizeByDirection(direction: 0)
+    }
+    
+    @objc func reduceThumb(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.adjustThumbSizeByDirection(direction: -1)
+    }
+    
+    @objc func selectThumbSize(_ sender: NSMenuItem) {
+        guard let thumbSize = sender.representedObject as? Int else { return }
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.changeThumbSize(thumbSize: thumbSize)
+    }
+    
+    @objc func showMoreMenu(_ sender: Any?) {
+        guard let viewController = contentViewController as? ViewController else {return}
+        
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        let actionItemOntop = menu.addItem(withTitle: NSLocalizedString("Pin Window", comment: "置顶"), action: #selector(ontopAction), keyEquivalent: "t")
+        actionItemOntop.keyEquivalentModifierMask = []
+        if let window = window {
+            actionItemOntop.state = (window.level == .floating) ? .on : .off
+        }
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        let actionItemSettings = menu.addItem(withTitle: NSLocalizedString("Settings...", comment: "设置..."), action: #selector(settingsAction), keyEquivalent: ",")
+        actionItemSettings.keyEquivalentModifierMask = [.command]
+
+        // 文件夹视图
+        // Folder view
+        if !viewController.publicVar.isInLargeView {
+            
+            menu.addItem(NSMenuItem.separator())
+            
+            let customLayoutStyle = menu.addItem(withTitle: NSLocalizedString("Custom Layout Style...", comment: "自定义布局样式..."), action: #selector(customLayoutStyle), keyEquivalent: "")
+            customLayoutStyle.isEnabled = !viewController.publicVar.isInLargeView
+            
+            menu.addItem(NSMenuItem.separator())
+            
+            let actionItemShowHiddenFile = menu.addItem(withTitle: NSLocalizedString("Show Hidden Files", comment: "显示隐藏文件"), action: #selector(showHiddenFileAction), keyEquivalent: ".")
+            actionItemShowHiddenFile.state = (viewController.publicVar.isShowHiddenFile) ? .on : .off
+            actionItemShowHiddenFile.keyEquivalentModifierMask = [.command, .shift]
+            
+            let showAllTypeFile = menu.addItem(withTitle: NSLocalizedString("Show All Types of Files", comment: "显示所有类型文件"), action: #selector(showAllTypeFileAction), keyEquivalent: ",")
+            showAllTypeFile.state = (viewController.publicVar.isShowAllTypeFile) ? .on : .off
+            showAllTypeFile.keyEquivalentModifierMask = [.command, .shift]
+            
+            let showImageFile = menu.addItem(withTitle: NSLocalizedString("Show Image Files", comment: "显示图像文件"), action: #selector(showImageFileAction), keyEquivalent: "")
+            showImageFile.state = (viewController.publicVar.isShowImageFile) ? .on : .off
+            
+            let showRawFile = menu.addItem(withTitle: NSLocalizedString("Show Camera RAW Files", comment: "显示相机RAW文件"), action: #selector(showRawFileAction), keyEquivalent: "")
+            showRawFile.state = (viewController.publicVar.isShowRawFile) ? .on : .off
+            
+            let showVideoFile = menu.addItem(withTitle: NSLocalizedString("Show Video Files", comment: "显示视频文件"), action: #selector(showVideoFileAction), keyEquivalent: "")
+            showVideoFile.state = (viewController.publicVar.isShowVideoFile) ? .on : .off
+
+            if viewController.publicVar.isShowAllTypeFile {
+                showImageFile.isEnabled=false
+                showRawFile.isEnabled=false
+                showVideoFile.isEnabled=false
+            }
+
+        }
+
+        if viewController.publicVar.isInLargeView {
+            menu.addItem(NSMenuItem.separator())
+
+            let isFullScreen = window?.styleMask.contains(.fullScreen) ?? false
+            let fullScreenTitle = isFullScreen
+                ? NSLocalizedString("Exit Full Screen", comment: "退出全屏")
+                : NSLocalizedString("Enter Full Screen", comment: "进入全屏")
+            let actionItemEnterFullScreen = menu.addItem(withTitle: fullScreenTitle, action: #selector(actEnterFullScreen), keyEquivalent: "\r")
+            actionItemEnterFullScreen.keyEquivalentModifierMask = [.option]
+
+            menu.addItem(NSMenuItem.separator())
+
+            let largeImageViewShowTagsAndRating = menu.addItem(withTitle: NSLocalizedString("Show Finder Tags and Ratings", comment: "显示Finder标签和评级"), action: #selector(toggleLargeImageViewShowTagsAndRating), keyEquivalent: "")
+            largeImageViewShowTagsAndRating.state = globalVar.largeImageViewShowTagsAndRating ? .on : .off
+
+        }
+
+        if !viewController.publicVar.isInLargeView || (viewController.publicVar.isInLargeView && viewController.largeImageView.file.type == .video) {
+
+            menu.addItem(NSMenuItem.separator())
+
+//            let autoPlayVisibleVideo = menu.addItem(withTitle: NSLocalizedString("Auto Play Visible Video", comment: "自动播放可见视频"), action: #selector(toggleAutoPlayVisibleVideo), keyEquivalent: "v")
+//            autoPlayVisibleVideo.keyEquivalentModifierMask = [.command, .shift]
+//            autoPlayVisibleVideo.state = viewController.publicVar.autoPlayVisibleVideo ? .on : .off
+//            autoPlayVisibleVideo.isEnabled = !viewController.publicVar.isInLargeView
+
+            let autoPlaySelectedVideo = menu.addItem(withTitle: NSLocalizedString("Auto Play Selected Video", comment: "自动播放选中视频"), action: #selector(toggleAutoPlaySelectedVideo), keyEquivalent: "")
+            autoPlaySelectedVideo.state = viewController.publicVar.autoPlaySelectedVideo ? .on : .off
+            autoPlaySelectedVideo.isEnabled = !viewController.publicVar.isInLargeView
+
+            let useInternalPlayer = menu.addItem(withTitle: NSLocalizedString("Use Internal Video Player", comment: "使用内置视频播放器"), action: #selector(toggleUseInternalPlayer), keyEquivalent: "")
+            useInternalPlayer.state = globalVar.useInternalPlayer ? .on : .off
+            useInternalPlayer.isEnabled = !viewController.publicVar.isInLargeView
+
+            let videoPlayInfo = menu.addItem(withTitle: NSLocalizedString("Readme...", comment: "说明..."), action: #selector(videoPlayInfo), keyEquivalent: "")
+            
+        }
+
+        if (viewController.publicVar.isInLargeView && viewController.largeImageView.file.type == .video) {
+
+            menu.addItem(NSMenuItem.separator())
+
+            let actionItemRememberPosition = menu.addItem(withTitle: NSLocalizedString("Remember Position", comment: "（视频）记忆位置"), action: #selector(actRememberPlayPosition), keyEquivalent: "j")
+            actionItemRememberPosition.keyEquivalentModifierMask = []
+            actionItemRememberPosition.state = globalVar.videoPlayRememberPosition ? .on : .off
+
+            let actionItemABPlay = menu.addItem(withTitle: NSLocalizedString("A-B Loop", comment: "（视频）A-B循环"), action: #selector(actABPlay), keyEquivalent: "k")
+            actionItemABPlay.keyEquivalentModifierMask = []
+            if let positionA = viewController.largeImageView.abPlayPositionA?.seconds,
+               let positionB = viewController.largeImageView.abPlayPositionB?.seconds,
+                    positionA < positionB {
+                actionItemABPlay.state = .on
+            } else {
+                actionItemABPlay.state = .off
+            }
+            
+            let actionItemSequentialPlay = menu.addItem(withTitle: NSLocalizedString("Sequential Playback", comment: "（视频）顺序播放"), action: #selector(actSequentialPlay), keyEquivalent: "l")
+            actionItemSequentialPlay.keyEquivalentModifierMask = []
+            actionItemSequentialPlay.state = globalVar.videoPlaySequentialPlay ? .on : .off
+
+            let playbackRateItem = menu.addItem(withTitle: NSLocalizedString("Playback Speed", comment: "播放速度"), action: nil, keyEquivalent: "")
+            playbackRateItem.submenu = viewController.largeImageView.buildPlaybackRateSubmenu()
+
+        }
+
+        if !viewController.publicVar.isInLargeView {
+
+            menu.addItem(NSMenuItem.separator())
+
+            let recursiveMode = menu.addItem(withTitle: NSLocalizedString("Recursive Mode", comment: "递归浏览模式"), action: #selector(toggleRecursiveMode), keyEquivalent: "r")
+            recursiveMode.keyEquivalentModifierMask = [.command, .shift]
+            recursiveMode.state = (viewController.publicVar.isRecursiveMode) ? .on : .off
+
+            let recursiveContainFolder = menu.addItem(withTitle: NSLocalizedString("Include Folders", comment: "包含文件夹"), action: #selector(toggleRecursiveContainFolder), keyEquivalent: "f")
+            recursiveContainFolder.keyEquivalentModifierMask = [.command, .shift]
+            recursiveContainFolder.state = (viewController.publicVar.isRecursiveContainFolder) ? .on : .off
+            
+            let recursiveModeInfo = menu.addItem(withTitle: NSLocalizedString("Readme...", comment: "说明..."), action: #selector(recursiveModeInfo), keyEquivalent: "")
+            
+        // 大图视图
+        // Large image view
+        } else {
+
+            menu.addItem(NSMenuItem.separator())
+        
+            let lockRotation = menu.addItem(withTitle: NSLocalizedString("Lock Rotation", comment: "锁定旋转"), action: #selector(toggleLockRotation), keyEquivalent: "")
+            lockRotation.keyEquivalentModifierMask = []
+            lockRotation.state = viewController.publicVar.isRotationLocked ? .on : .off
+            
+            let lockZoom = menu.addItem(withTitle: NSLocalizedString("Lock Zoom", comment: "锁定缩放"), action: #selector(toggleLockZoom), keyEquivalent: "")
+            lockZoom.keyEquivalentModifierMask = []
+            lockZoom.state = viewController.publicVar.isZoomLocked ? .on : .off
+            lockZoom.isEnabled = viewController.largeImageView.file.type == .image
+
+            let lockMirror = menu.addItem(withTitle: NSLocalizedString("Lock Mirror", comment: "锁定镜像"), action: #selector(toggleLockMirror), keyEquivalent: "")
+            lockMirror.keyEquivalentModifierMask = []
+            lockMirror.state = viewController.publicVar.isMirrorLocked ? .on : .off
+            lockMirror.isEnabled = viewController.largeImageView.file.type == .image
+
+            if viewController.largeImageView.file.type == .image {
+
+                menu.addItem(NSMenuItem.separator())
+            
+                let panWhenZoomed = menu.addItem(withTitle: NSLocalizedString("pan-zoom", comment: "(放大后滚动变为平移)"), action: #selector(togglePanWhenZoomed), keyEquivalent: "")
+                panWhenZoomed.keyEquivalentModifierMask = []
+                panWhenZoomed.state = viewController.publicVar.isPanWhenZoomed ? .on : .off
+                
+                let panZoomInfo = menu.addItem(withTitle: NSLocalizedString("Readme...", comment: "说明..."), action: #selector(panZoomInfo), keyEquivalent: "")
+                
+                // let customZoomRatio = menu.addItem(withTitle: NSLocalizedString("Custom Zoom Ratio...", comment: "自定义缩放比例..."), action: #selector(showCustomZoomRatioDialog), keyEquivalent: "")
+                // customZoomRatio.keyEquivalentModifierMask = []
+                
+                // let customZoomStep = menu.addItem(withTitle: NSLocalizedString("Custom Zoom Step...", comment: "自定义缩放梯度..."), action: #selector(showCustomZoomStepDialog), keyEquivalent: "")
+                // customZoomStep.keyEquivalentModifierMask = []
+
+                menu.addItem(NSMenuItem.separator())
+
+                let rawUseEmbeddedThumb = menu.addItem(withTitle: NSLocalizedString("RAW Uses Exif Embedded Thumbnail", comment: "RAW使用Exif内嵌缩略图"), action: #selector(toggleRawUseEmbeddedThumb), keyEquivalent: "")
+                rawUseEmbeddedThumb.keyEquivalentModifierMask = []
+                rawUseEmbeddedThumb.state = viewController.publicVar.isRawUseEmbeddedThumb ? .on : .off
+
+                let rawUseEmbeddedThumbInfo = menu.addItem(withTitle: NSLocalizedString("Readme...", comment: "说明..."), action: #selector(rawUseEmbeddedThumbInfo), keyEquivalent: "")
+
+            }
+
+        }
+        
+        // menu.addItem(NSMenuItem.separator())
+        
+        // let portableMode = menu.addItem(withTitle: NSLocalizedString("Portable Browsing Mode", comment: "便携浏览模式"), action: #selector(togglePortableMode), keyEquivalent: "")
+        // portableMode.keyEquivalentModifierMask = []
+        // portableMode.state = globalVar.portableMode ? .on : .off
+        
+        // let portableModeInfo = menu.addItem(withTitle: NSLocalizedString("Readme...", comment: "说明..."), action: #selector(portableModeInfo), keyEquivalent: "")
+        
+        menu.addItem(NSMenuItem.separator())
+
+        var autoScrollMenuText = NSLocalizedString("Enable Automatic Scroll", comment: "启用自动滚动")
+        if viewController.autoScrollTimer != nil {
+            autoScrollMenuText = NSLocalizedString("Disable Automatic Scroll", comment: "停止自动滚动")
+        }
+        let autoScroll = menu.addItem(withTitle: autoScrollMenuText, action: #selector(toggleAutoScroll), keyEquivalent: "")
+        autoScroll.isEnabled = !viewController.publicVar.isInLargeView
+        
+        var autoPlayMenuText = NSLocalizedString("Enable Automatic Play", comment: "启用自动播放")
+        if viewController.autoPlayTimer != nil {
+            autoPlayMenuText = NSLocalizedString("Disable Automatic Play", comment: "停止自动播放")
+        }
+        let autoPlay = menu.addItem(withTitle: autoPlayMenuText, action: #selector(toggleAutoPlay), keyEquivalent: "")
+        autoPlay.isEnabled = viewController.publicVar.isInLargeView && viewController.largeImageView.file.type == .image
+
+        menu.addItem(NSMenuItem.separator())
+        
+        let maximizeWindow = menu.addItem(withTitle: NSLocalizedString("Maximize Window", comment: "最大化窗口"), action: #selector(maximizeWindow), keyEquivalent: "1")
+        maximizeWindow.keyEquivalentModifierMask = []
+        
+        let optimizeWindow = menu.addItem(withTitle: NSLocalizedString("optimizeWindow", comment: "合适窗口大小"), action: #selector(optimizeWindow), keyEquivalent: "2")
+        optimizeWindow.keyEquivalentModifierMask = []
+        
+        let adjustWindowActual = menu.addItem(withTitle: NSLocalizedString("Adjust Window to Actual Image Size", comment: "调整窗口至图片实际大小"), action: #selector(adjustWindowActual), keyEquivalent: "3")
+        adjustWindowActual.keyEquivalentModifierMask = []
+        
+        let adjustWindowCurrent = menu.addItem(withTitle: NSLocalizedString("Adjust Window to Current Image Size", comment: "调整窗口至图片当前大小"), action: #selector(adjustWindowCurrent), keyEquivalent: "4")
+        adjustWindowCurrent.keyEquivalentModifierMask = []
+        
+        let adjustWindowToCenter = menu.addItem(withTitle: NSLocalizedString("Center the Window", comment: "将窗口居中"), action: #selector(adjustWindowToCenter), keyEquivalent: "5")
+        adjustWindowToCenter.keyEquivalentModifierMask = []
+        
+        adjustWindowActual.isEnabled = (viewController.publicVar.isInLargeView)
+        adjustWindowCurrent.isEnabled = (viewController.publicVar.isInLargeView)
+        
+        if viewController.publicVar.isInLargeView {
+            
+            menu.addItem(NSMenuItem.separator())
+            
+            let switchToActualSize = menu.addItem(withTitle: NSLocalizedString("switchToActualSize", comment: "图片默认实际大小"), action: #selector(switchToActualSize), keyEquivalent: "")
+            
+            let switchToFitToWindow = menu.addItem(withTitle: NSLocalizedString("switchToFitToWindow", comment: "图片默认适应窗口"), action: #selector(switchToFitToWindow), keyEquivalent: "")
+            
+            switchToActualSize.state = (viewController.publicVar.isLargeImageFitWindow == false) ? .on : .off
+            switchToFitToWindow.state = (viewController.publicVar.isLargeImageFitWindow == true) ? .on : .off
+        }
+
+        menu.addItem(NSMenuItem.separator())
+        
+        let switchToSystemTheme = menu.addItem(withTitle: NSLocalizedString("switchToSystemTheme", comment: "跟随系统主题"), action: #selector(switchToSystemTheme), keyEquivalent: "")
+        let switchToLightMode = menu.addItem(withTitle: NSLocalizedString("switchToLightMode", comment: "浅色模式"), action: #selector(switchToLightMode), keyEquivalent: "")
+        let switchToDarkMode = menu.addItem(withTitle: NSLocalizedString("switchToDarkMode", comment: "黑暗模式"), action: #selector(switchToDarkMode), keyEquivalent: "")
+        let theme=NSApp.effectiveAppearance.name
+        if NSApp.appearance == nil {
+            switchToSystemTheme.state = .on
+            switchToLightMode.state = .off
+            switchToDarkMode.state = .off
+        }else{
+            switchToSystemTheme.state = .off
+            switchToLightMode.state = (theme == .darkAqua) ? .off : .on
+            switchToDarkMode.state = (theme == .darkAqua) ? .on : .off
+        }
+        
+        if let button = sender as? NSButton {
+            let buttonFrame = button.convert(button.bounds, to: nil)
+            let menuLocation = NSPoint(x: 0, y: buttonFrame.height + 4)
+            menu.popUp(positioning: nil, at: menuLocation, in: button)
+        } else {
+            let menuLocation = NSEvent.mouseLocation
+            menu.popUp(positioning: nil, at: menuLocation, in: nil)
+        }
+    }
+
+    @objc func toggleEnableHDR(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.publicVar.isEnableHDR.toggle()
+        UserDefaults.standard.set(viewController.publicVar.isEnableHDR, forKey: "isEnableHDR")
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if #available(macOS 14.0, *) {
+                viewController.largeImageView.imageView.preferredImageDynamicRange = (viewController.publicVar.isEnableHDR) ? .high : .standard
+            }
+            // self.updateToolbar()
+            viewController.changeLargeImage(firstShowThumb: false, resetSize: false, triggeredByLongPress: false, forceRefresh: true)
+        }
+    }
+
+    @objc func toggleLockRotation(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.toggleLockRotation()
+    }
+
+    @objc func toggleLockZoom(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.toggleLockZoom()
+    }
+
+    @objc func toggleLockMirror(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.toggleLockMirror()
+    }
+
+    @objc func showCustomZoomRatioDialog(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.showCustomZoomRatioDialog()
+    }
+    
+    @objc func showCustomZoomStepDialog(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.showCustomZoomStepDialog()
+    }
+    
+    @objc func panZoomInfo(_ sender: NSMenuItem){
+        showInformationLong(title: NSLocalizedString("Info", comment: "说明"), message: NSLocalizedString("pan-zoom-info", comment: "对于缩放后平移的说明..."), width: 300)
+    }
+    
+    @objc func togglePanWhenZoomed(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.togglePanWhenZoomed()
+    }
+    
+    @objc func toggleRawUseEmbeddedThumb(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.toggleRawUseEmbeddedThumb()
+    }
+
+    @objc func rawUseEmbeddedThumbInfo(_ sender: NSMenuItem){
+        showInformationLong(title: NSLocalizedString("Info", comment: "说明"), message: NSLocalizedString("raw-use-embeded-info", comment: "raw使用exif内嵌缩略图替代浏览的说明..."), width: 300)
+    }
+    
+    @objc func maximizeWindow(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.adjustWindowMaximize()
+    }
+    
+    @objc func optimizeWindow(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.adjustWindowSuitable()
+    }
+    
+    @objc func adjustWindowActual(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.adjustWindowImageActual()
+    }
+    
+    @objc func adjustWindowCurrent(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.adjustWindowImageCurrent()
+    }
+    
+    @objc func adjustWindowToCenter(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.adjustWindowToCenter()
+    }
+    
+    @objc func switchToActualSize(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.switchToActualSizeForLargeImage()
+    }
+    
+    @objc func switchToFitToWindow(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.switchToFitToWindowForLargeImage()
+    }
+    
+    @objc func switchToSystemTheme(_ sender: NSMenuItem){
+        let defaults = UserDefaults.standard
+        defaults.set("", forKey: "appearance")
+        NSApp.appearance=nil
+    }
+    
+    @objc func switchToLightMode(_ sender: NSMenuItem){
+        let defaults = UserDefaults.standard
+        defaults.set("aqua", forKey: "appearance")
+        NSApp.appearance=NSAppearance(named: .aqua)
+    }
+    
+    @objc func switchToDarkMode(_ sender: NSMenuItem){
+        let defaults = UserDefaults.standard
+        defaults.set("darkAqua", forKey: "appearance")
+        NSApp.appearance=NSAppearance(named: .darkAqua)
+    }
+    
+    @objc func pathClick(_ sender: NSMenuItem) {
+        guard let viewController = contentViewController as? ViewController else {return}
+        log("Clicked on \(sender.title)")
+
+        let rawPath = (sender.representedObject as? String) ?? sender.title
+        guard let url=URL(string: getFileSchemeAbsPath(rawPath)) else {return}
+        if viewController.publicVar.isInLargeView {
+            viewController.closeLargeImage(0)
+        }
+        viewController.switchDirByDirection(direction: .zero, dest: url.absoluteString, doCollapse: true, expandLast: true, skip: false, stackDeep: 0)
+    }
+    
+    @objc func favoritesAdd(_ sender: NSMenuItem) {
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.fileDB.lock()
+        let curFolder=viewController.fileDB.curFolder
+        viewController.fileDB.unlock()
+        if !globalVar.myFavoritesArray.contains(curFolder) {
+            globalVar.myFavoritesArray.append(curFolder)
+            let defaults = UserDefaults.standard
+            defaults.set(globalVar.myFavoritesArray, forKey: "globalVar.myFavoritesArray")
+        }
+    }
+    @objc func deleteFavorite(_ sender: NSMenuItem) {
+        guard let folderPath = sender.representedObject as? String else { return }
+        
+        // 在这里处理删除逻辑
+        // Handle delete logic here
+        if let index = globalVar.myFavoritesArray.firstIndex(of: folderPath) {
+            globalVar.myFavoritesArray.remove(at: index)
+            let defaults = UserDefaults.standard
+            defaults.set(globalVar.myFavoritesArray, forKey: "globalVar.myFavoritesArray")
+        }
+        
+        // 更新菜单以反映更改
+        // Update menu to reflect changes
+        // menuNeedsUpdate(favoritesMenu)
+    }
+    @objc func moveUpFavorite(_ sender: NSMenuItem) {
+        guard let index = sender.representedObject as? Int, index > 0 else { return }
+        
+        // 在这里处理上移逻辑
+        // Handle move up logic here
+        globalVar.myFavoritesArray.swapAt(index, index - 1)
+        let defaults = UserDefaults.standard
+        defaults.set(globalVar.myFavoritesArray, forKey: "globalVar.myFavoritesArray")
+        
+        // 更新菜单以反映更改
+        // Update menu to reflect changes
+        // menuNeedsUpdate(favoritesMenu)
+    }
+
+    @objc func moveDownFavorite(_ sender: NSMenuItem) {
+        guard let index = sender.representedObject as? Int, index < globalVar.myFavoritesArray.count - 1 else { return }
+        
+        // 在这里处理下移逻辑
+        // Handle move down logic here
+        globalVar.myFavoritesArray.swapAt(index, index + 1)
+        let defaults = UserDefaults.standard
+        defaults.set(globalVar.myFavoritesArray, forKey: "globalVar.myFavoritesArray")
+        
+        // 更新菜单以反映更改
+        // menuNeedsUpdate(favoritesMenu)
+    }
+    
+    @objc func settingsAction(_ sender: NSMenuItem) {
+        if let appDelegate = NSApplication.shared.delegate as? AppDelegate {
+            appDelegate.settingsWindowController.show()
+        }
+    }
+    
+    @objc func showHiddenFileAction(_ sender: NSMenuItem) {
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.toggleIsShowHiddenFile()
+    }
+    
+    @objc func showAllTypeFileAction(_ sender: NSMenuItem) {
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.toggleIsShowAllTypeFile()
+    }
+    
+    @objc func showImageFileAction(_ sender: NSMenuItem) {
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.toggleIsShowImageFile()
+    }
+    
+    @objc func showRawFileAction(_ sender: NSMenuItem) {
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.toggleIsShowRawFile()
+    }
+    
+    @objc func showVideoFileAction(_ sender: NSMenuItem) {
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.toggleIsShowVideoFile()
+    }
+    
+    @objc func togglePortableMode(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.togglePortableMode()
+    }
+    
+    @objc func portableModeInfo(_ sender: NSMenuItem){
+        showInformationLong(title: NSLocalizedString("Info", comment: "说明"), message: NSLocalizedString("portable-mode-info", comment: "对于便携模式的说明..."), width: 300)
+    }
+    
+    @objc func toggleSearchFilter(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.applyFilter(isReset: true)
+    }
+
+    @objc func toggleClearTagFilter(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.handleClearFinderTagFilter()
+    }
+
+    @objc func toggleClearRatingFilter(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.handleClearRatingFilter()
+    }
+
+    @objc func actClearAllTagsAndRatingFilters(_ sender: NSMenuItem) {
+        guard let viewController = contentViewController as? ViewController else { return }
+        viewController.handleClearTagsAndRatingFilter()
+    }
+    
+    @objc func toggleRecursiveMode(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.toggleRecursiveMode()
+    }
+    
+    @objc func toggleRecursiveContainFolder(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.toggleRecursiveContainFolder()
+    }
+    
+    @objc func recursiveModeInfo(_ sender: NSMenuItem){
+        showInformationLong(title: NSLocalizedString("Info", comment: "说明"), message: NSLocalizedString("recursive-mode-info", comment: "对于递归模式的说明..."), width: 300)
+    }
+    
+    @objc func toggleAutoScroll(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.toggleAutoScroll()
+    }
+    
+    @objc func toggleAutoPlay(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.toggleAutoPlay()
+    }
+    
+    @objc func toggleAutoPlayVisibleVideo(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.toggleAutoPlayVisibleVideo()
+    }
+
+    @objc func toggleAutoPlaySelectedVideo(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.toggleAutoPlaySelectedVideo()
+    }
+
+    @objc func toggleUseInternalPlayer(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.toggleUseInternalPlayer()
+    }
+    
+    @objc func videoPlayInfo(_ sender: NSMenuItem){
+        showInformationLong(title: NSLocalizedString("Info", comment: "说明"), message: NSLocalizedString("video-play-info", comment: "对于视频播放的说明..."))
+    }
+
+    @objc func actEnterFullScreen(_ sender: NSMenuItem){
+        if let window = window {
+            window.toggleFullScreen(nil)
+        }
+    }
+
+    @objc func actRememberPlayPosition(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.largeImageView.actRememberPlayPosition()
+    }
+
+    @objc func actABPlay(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.largeImageView.actABPlay()
+    }
+    
+    @objc func actSequentialPlay(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.largeImageView.actSequentialPlay()
+    }
+
+    @objc func customLayoutStyle(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.customLayoutStylePrompt()
+    }
+
+    @objc func toggleLargeImageViewShowTagsAndRating(_ sender: NSMenuItem){
+        guard let viewController = contentViewController as? ViewController else {return}
+        viewController.toggleLargeImageViewShowTagsAndRating()
+    }
+}

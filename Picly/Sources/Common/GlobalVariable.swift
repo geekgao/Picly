@@ -1,0 +1,211 @@
+//
+//  GlobalVariable.swift
+//  Picly
+//
+
+import Foundation
+import Cocoa
+
+// let DEFAULT_SIZE = 512
+let DEFAULT_SIZE = NSSize(width: 512, height: 512)
+let OPEN_LARGEIMAGE_DURATION = 0.1
+// let THUMB_SIZES = [192,256,384,512,640,768,896,1024,1536,2048,4096]
+var THUMB_SIZES = [Int]()
+let PRELOAD_THUMB_RANGE_PRE = 20
+let PRELOAD_THUMB_RANGE_NEXT = 40
+let RESET_VIEW_FILE_NUM_THRESHOLD = 5000
+let INFO_VIEW_DURATION = 0.3
+
+let OFFICIAL_WEBSITE = "https://picly.app"
+let FINDER_TAG_LEARN_MORE_URL = "https://picly.app/tag"
+
+var ROOT_NAME: String { return getSystemVolumeName() ?? "Macintosh HD" }
+
+let COLOR_COLLECTIONVIEW_BG_LIGHT = "#FFFFFF"
+let COLOR_COLLECTIONVIEW_BG_DARK = "#2D2D2D"
+
+class GlobalVar{
+    var myFavoritesArray = ["/"]
+    var windowNum = 0
+    var toolbarIndex = 0
+    var operationLogs: [String] = []
+    var closedPaths: [String] = []
+    
+    // 临时公用状态变量，供新窗口启动时使用
+    // Temporary shared state variables, used for new window startup
+    var isLaunchFromFile = false
+    var startSpeedUpImageSizeCache: NSSize? = nil
+    var launchFileFolderExtCounts: [String: [String: Int]] = [:]
+    var launchFileFolderExtCountsLock = NSLock()
+    
+    // 剪切模式标志，剪切时置为true，粘贴时检查此标志决定执行移动还是复制
+    // Cut mode flag, set to true on cut, checked on paste to decide move or copy
+    var isCutMode = false
+    
+    // 被剪切的文件路径集合，用于在UI上显示变淡效果
+    // Set of cut file paths, used to show dimmed effect in UI
+    var cutItemPaths = Set<String>()
+    
+    // 实时状态变量
+    // Real-time state variables
+    var isInMiddleMouseDrag = false
+    
+    // "设置"中按钮，用于同步状态
+    // Button in "Settings" for synchronizing state
+    weak var useInternalPlayerCheckbox: NSButton?
+    
+    // "设置"中的变量
+    // Variables in "Settings"
+    var scrollSensitivityRatio: Double {
+        // 将滑块值 1.0-9.0 映射到乘数
+        // Map slider value 1.0-9.0 to multiplier
+        // 5.0 对应 1.0（原始速度）
+        // 5.0 corresponds to 1.0 (original speed)
+        // 1.0 对应 0.25（慢 4 倍）
+        // 1.0 corresponds to 0.25 (4x slower)
+        // 9.0 对应 4.0（快 4 倍）
+        // 9.0 corresponds to 4.0 (4x faster)
+        return pow(2.0, (scrollSensitivity - 5.0) / 2.0)
+    }
+    var scrollSensitivity: Double = 5.0
+    var terminateAfterLastWindowClosed = true
+    var autoHideToolbar = false
+    var autoHideCursorWhenFullscreen = false
+    var doNotUseFFmpeg = false
+    var memUseLimit: Int = 4000
+    var thumbThreadNum: Int = 8
+    var folderSearchDepth: Int = 4
+    var thumbThreadNum_External: Int = 8
+    var folderSearchDepth_External: Int = 0
+    var randomFolderThumb = false
+    var loopBrowsing = false
+    var blackBgInFullScreen = false
+    var blackBgInFullScreenForVideo = false
+    var blackBgAlways = false
+    var blackBgAlwaysForVideo = true
+    var thumbnailOfFolderUseStacking = true
+    var thumbnailExcludeList: [String] = []
+    var usePinyinSearch = false
+    var usePinyinInitialSearch = false
+    var videoPlayRememberPosition = false
+    var videoPlaySequentialPlay = false
+    var useInternalPlayer = true {
+        didSet {
+            useInternalPlayerCheckbox?.state = useInternalPlayer ? .on : .off
+        }
+    }
+    var useQuickSearch = false
+    var isEnterKeyToOpen = false
+    var isEscKeyToGoBack = true
+    var clickEdgeToSwitchImage = false
+    var scrollMouseWheelToZoom = true
+    var openLastFolder = true
+    var homeFolder = "file:///"
+    var keepFilterStateWhenSwitchFolder = false
+    var dirTreeAutoExpand = true
+    var largeImageViewShowTagsAndRating = true
+    var enhancedIndexEnabled = true
+    var collectionViewItemShowTooltip = true
+    var imageAIEnabled = false
+    var aiLastIndexedPath: String = ""
+    var aiLastIndexedTime: CFAbsoluteTime = 0
+    
+    // 可记忆设置变量
+    // Rememberable settings variables
+    var isFirstTimeUse = true
+    var portableMode = false
+    var portableImageUseActualSize = false
+    var portableImageWidthRatio = 0.8
+    var portableImageHeightRatio = 0.95
+    var portableListWidthRatio = 0.7
+    var portableListHeightRatio = 0.84
+    var portableListWidthRatioHH = 0.82
+    var portableListHeightRatioHH = 0.84
+    var videoVolume: Float = 1.0
+    var videoPlaybackRate: Float = 1.0
+    
+    var HandledImageExtensions: [String] = []
+    var HandledRawExtensions: [String] = []
+    var HandledImageAndRawExtensions: [String] = []
+    var HandledVideoExtensions: [String] = []
+    var HandledOtherExtensions: [String] = []
+    var HandledNonExternalExtensions: [String] = []
+    var HandledNativeSupportedVideoExtensions: [String] = []
+    var HandledNotNativeSupportedVideoExtensions: [String] = []
+    var HandledFileExtensions: [String] = []
+    var HandledSearchExtensions: [String] = []
+    var HandledFolderThumbExtensions: [String] = []
+
+    init(){
+        HandledImageExtensions = ["jpg", "jpeg", "jpe", "jxl", "png", "gif", "bmp", "heif", "heic", "heics", "hif", "avif", "tif", "tiff", "webp", "jfif", "jp2", "ai", "psd", "ico", "cur", "icns", "svg", "tga", "pvr", "dds", "astc", "ktx", "ktx2", "exr", "hdr", "mpo", "pict", "pct", "sgi", "pbm", "pgm", "ppm", "pnm", "pam", "pfm"]
+        HandledRawExtensions = ["raw", "dng", "crw", "cr2", "cr3", "dxo", "erf", "raf", "fff", "3fr", "dcr", "kdc", "k25", "mrw", "mos", "rwl", "nef", "nefx", "nrw", "orf", "rw2", "pef", "ptx", "iiq", "cap", "srw", "arw", "sr2", "srf", "axr"] + ["gpr", "x3f"]
+        HandledImageAndRawExtensions = HandledImageExtensions + HandledRawExtensions
+        HandledNativeSupportedVideoExtensions = ["mp4", "mov", "m2ts", "mts", "ts", "mpeg", "mpg", "mpe", "m2v", "m4v", "vob", "3gp", "3g2"]
+        HandledNotNativeSupportedVideoExtensions = ["mkv", "avi", "flv", "f4v", "asf", "wmv", "rmvb", "rm", "webm", "divx", "xvid", "mjpeg", "hevc", "mxf", "ogv", "wtv"]
+        HandledVideoExtensions = HandledNativeSupportedVideoExtensions + HandledNotNativeSupportedVideoExtensions
+        // 不能为""，否则会把目录异常包含进来
+        // Cannot be "", otherwise directories will be incorrectly included
+        HandledOtherExtensions = [] // ["pdf"]
+        HandledNonExternalExtensions = HandledImageAndRawExtensions
+        // 文件列表显示的
+        // Displayed in file list
+        HandledFileExtensions = HandledImageAndRawExtensions + HandledVideoExtensions + HandledOtherExtensions
+        // 作为鼠标手势查找的目标
+        // As target for mouse gesture search
+        HandledSearchExtensions = HandledImageAndRawExtensions + HandledVideoExtensions
+        // 目录缩略图
+        // Folder thumbnails
+        HandledFolderThumbExtensions = HandledImageAndRawExtensions.filter{$0 != "svg"} + HandledVideoExtensions // + ["pdf"]
+        // 使用个别特殊svg作为文件夹缩略图绘图元素会导致程序异常 'NSGenericException', reason: 'NaN point value'
+        // Using certain special SVGs as folder thumbnail drawing elements will cause program exception 'NSGenericException', reason: 'NaN point value'
+    }
+}
+var globalVar = GlobalVar()
+
+let homeDirectory = NSHomeDirectory()
+
+func getMainViewController() -> ViewController? {
+    if let viewController = NSApplication.shared.mainWindow?.contentViewController as? ViewController {
+        return viewController
+    }
+    return nil
+}
+
+func getAnyViewController() -> ViewController? {
+    for window in NSApplication.shared.windows {
+        if let viewController = window.contentViewController as? ViewController {
+            return viewController
+        }
+    }
+    return nil
+}
+
+func getViewController(_ selfView: NSView?) -> ViewController? {
+    guard let selfView = selfView else { return nil }
+    var responder: NSResponder? = selfView
+    while responder != nil {
+        if let viewController = responder as? ViewController {
+            return viewController
+        }
+        responder = responder?.nextResponder
+    }
+    return nil
+}
+
+func getSystemVolumeName() -> String? {
+    
+    // 获取根目录的URL
+    // Get root directory URL
+    let rootURL = URL(fileURLWithPath: "/")
+    
+    do {
+        // 获取根目录的资源值，特别是卷名
+        // Get root directory resource values, especially volume name
+        let resourceValues = try rootURL.resourceValues(forKeys: [.volumeNameKey])
+        return resourceValues.volumeName
+    } catch {
+        log("Error retrieving volume name: \(error)", level: .warn)
+        return nil
+    }
+}
+

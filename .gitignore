@@ -1,0 +1,6 @@
+LocalDev.xcconfig.code2/
+xcuserdata/
+.code2/
+.imageai/
+.build/
+.DS_Store

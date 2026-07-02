@@ -1,0 +1,1308 @@
+//
+//  AppDelegate.swift
+//  Picly
+//
+
+import Cocoa
+import Settings
+
+@main
+class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemValidation {
+
+    @IBOutlet weak var favoritesMenu: NSMenu!
+    @IBOutlet weak var historyMenu: NSMenu!
+    @IBOutlet weak var viewMenu: NSMenu!
+    @IBOutlet weak var systemThemeMenuItem: NSMenuItem!
+    @IBOutlet weak var lightModeMenuItem: NSMenuItem!
+    @IBOutlet weak var darkModeMenuItem: NSMenuItem!
+    @IBOutlet weak var justifiedViewMenuItem: NSMenuItem!
+    @IBOutlet weak var waterfallViewModeMenuItem: NSMenuItem!
+    @IBOutlet weak var gridViewMenuItem: NSMenuItem!
+    @IBOutlet weak var detailViewModeMenuItem: NSMenuItem!
+    @IBOutlet weak var switchToActualSizeMenuItem: NSMenuItem!
+    @IBOutlet weak var switchToFitToWindowMenuItem: NSMenuItem!
+    @IBOutlet weak var toggleSidebarMenuItem: NSMenuItem!
+    @IBOutlet weak var onTopMenuItem: NSMenuItem!
+    @IBOutlet weak var maximizeWindowMenuItem: NSMenuItem!
+    @IBOutlet weak var optimizeWindowMenuItem: NSMenuItem!
+    @IBOutlet weak var adjustWindowActualMenuItem: NSMenuItem!
+    @IBOutlet weak var adjustWindowCurrentMenuItem: NSMenuItem!
+    @IBOutlet weak var adjustWindowToCenterMenuItem: NSMenuItem!
+    @IBOutlet weak var toggleIsShowHiddenFileMenuItem: NSMenuItem!
+    @IBOutlet weak var toggleIsShowImageFileMenuItem: NSMenuItem!
+    @IBOutlet weak var toggleIsShowRawFileMenuItem: NSMenuItem!
+    @IBOutlet weak var toggleIsShowVideoFileMenuItem: NSMenuItem!
+    @IBOutlet weak var toggleIsShowAllTypeFileMenuItem: NSMenuItem!
+    @IBOutlet weak var customLayoutStyleMenuItem: NSMenuItem!
+    @IBOutlet weak var deselectMenuItem: NSMenuItem!
+    @IBOutlet weak var reopenClosedTabsMenuItem: NSMenuItem!
+    @IBOutlet weak var lockRotationMenuItem: NSMenuItem!
+    @IBOutlet weak var lockZoomMenuItem: NSMenuItem!
+    @IBOutlet weak var lockMirrorMenuItem: NSMenuItem!
+    @IBOutlet weak var activatePanScrollMenuItem: NSMenuItem!
+    @IBOutlet weak var activatePanScrollReadmeMenuItem: NSMenuItem!
+    @IBOutlet weak var toggleRawUseEmbeddedThumbMenuItem: NSMenuItem!
+    @IBOutlet weak var toggleRawUseEmbeddedThumbReadmeMenuItem: NSMenuItem!
+    @IBOutlet weak var showFinderTagsAndRatingMenuItem: NSMenuItem!
+    
+    var commonParentPath=""
+    
+    var windowControllers: [NSWindowController] = []
+    
+    lazy var settingsWindowController = SettingsWindowController(
+        panes: [
+            GeneralSettingsViewController(),
+            CustomSettingsViewController(),
+            ActionsSettingsViewController(),
+            TaggingSettingsViewController(),
+            AdvancedSettingsViewController()
+        ],
+        animated: true,
+        hidesToolbarForSingleItem: true
+    )
+    
+    func applicationWillFinishLaunching(_ aNotification: Notification) {
+
+        log("Start applicationWillFinishLaunching")
+        // Start applicationWillFinishLaunching
+        
+        func generateRoundedArrayDeprecated() -> [Int] {
+            var result: [Int] = []
+            var uniqueNumbers: Set<Int> = Set()
+            var currentNumber: Double = 192
+            
+            while currentNumber <= 10000 {
+                let roundedNumber = Int(round(currentNumber) / 64) * 64
+                if !uniqueNumbers.contains(roundedNumber) {
+                    result.append(roundedNumber)
+                    uniqueNumbers.insert(roundedNumber)
+                }
+                
+                currentNumber *= 1.1
+            }
+            
+            return result
+        }
+        func generateThumbSizeArray() -> [Int] {
+            var result: [Int] = []
+            var currentNumber: Int = 128
+            
+            while currentNumber <= 10000 {
+                result.append(currentNumber)
+                currentNumber += 16
+            }
+            
+            return result
+        }
+        THUMB_SIZES=generateThumbSizeArray()
+        // print(THUMB_SIZES)
+        
+        // UserDefaults.standard.set(nil, forKey: "AppleLanguages")
+        // UserDefaults.standard.set(["en"], forKey: "AppleLanguages")
+        // UserDefaults.standard.set(["zh-Hans"], forKey: "AppleLanguages")
+        
+        let defaults = UserDefaults.standard
+        let appearance = defaults.string(forKey: "appearance")
+        if appearance == "darkAqua" {
+            NSApp.appearance = NSAppearance(named: .darkAqua)
+        }else if appearance == "aqua" {
+            NSApp.appearance = NSAppearance(named: .aqua)
+        }else{
+            NSApp.appearance = nil
+        }
+        
+        if let openLastFolder = UserDefaults.standard.value(forKey: "openLastFolder") as? Bool {
+            globalVar.openLastFolder = openLastFolder
+        }
+        if let homeFolder = UserDefaults.standard.value(forKey: "homeFolder") as? String {
+            globalVar.homeFolder = homeFolder
+        }
+        if let hasNormalExit = UserDefaults.standard.value(forKey: "hasNormalExit") as? Bool {
+            if !hasNormalExit {
+                UserDefaults.standard.set("file:///", forKey: "lastFolder")
+                globalVar.homeFolder = "file:///"
+            }
+        }
+        UserDefaults.standard.set(false, forKey: "hasNormalExit")
+        
+        if let isFirstTimeUse = UserDefaults.standard.value(forKey: "isFirstTimeUse") as? Bool {
+            globalVar.isFirstTimeUse = isFirstTimeUse
+        }
+        if let terminateAfterLastWindowClosed = UserDefaults.standard.value(forKey: "terminateAfterLastWindowClosed") as? Bool {
+            globalVar.terminateAfterLastWindowClosed = terminateAfterLastWindowClosed
+        }
+        if let autoHideToolbar = UserDefaults.standard.value(forKey: "autoHideToolbar") as? Bool {
+            globalVar.autoHideToolbar = autoHideToolbar
+        }
+        if let autoHideCursorWhenFullscreen = UserDefaults.standard.value(forKey: "autoHideCursorWhenFullscreen") as? Bool {
+            globalVar.autoHideCursorWhenFullscreen = autoHideCursorWhenFullscreen
+        }
+        if let randomFolderThumb = UserDefaults.standard.value(forKey: "randomFolderThumb") as? Bool {
+            globalVar.randomFolderThumb = randomFolderThumb
+        }
+        if let thumbnailOfFolderUseStacking = UserDefaults.standard.value(forKey: "thumbnailOfFolderUseStacking") as? Bool {
+            globalVar.thumbnailOfFolderUseStacking = thumbnailOfFolderUseStacking
+        }
+        if let loopBrowsing = UserDefaults.standard.value(forKey: "loopBrowsing") as? Bool {
+            globalVar.loopBrowsing = loopBrowsing
+        }
+        if let blackBgInFullScreen = UserDefaults.standard.value(forKey: "blackBgInFullScreen") as? Bool {
+            globalVar.blackBgInFullScreen = blackBgInFullScreen
+        }
+        if let blackBgAlways = UserDefaults.standard.value(forKey: "blackBgAlways") as? Bool {
+            globalVar.blackBgAlways = blackBgAlways
+        }
+        if let blackBgInFullScreenForVideo = UserDefaults.standard.value(forKey: "blackBgInFullScreenForVideo") as? Bool {
+            globalVar.blackBgInFullScreenForVideo = blackBgInFullScreenForVideo
+        }
+        if let blackBgAlwaysForVideo = UserDefaults.standard.value(forKey: "blackBgAlwaysForVideo") as? Bool {
+            globalVar.blackBgAlwaysForVideo = blackBgAlwaysForVideo
+        }
+        if let thumbnailExcludeList = UserDefaults.standard.value(forKey: "thumbnailExcludeList") as? [String] {
+            globalVar.thumbnailExcludeList = thumbnailExcludeList
+        }
+        if let usePinyinSearch = UserDefaults.standard.value(forKey: "usePinyinSearch") as? Bool {
+            globalVar.usePinyinSearch = usePinyinSearch
+        }
+        if let usePinyinInitialSearch = UserDefaults.standard.value(forKey: "usePinyinInitialSearch") as? Bool {
+            globalVar.usePinyinInitialSearch = usePinyinInitialSearch
+        }
+        if let memUseLimit = UserDefaults.standard.value(forKey: "memUseLimit") as? Int {
+            globalVar.memUseLimit = memUseLimit
+        }
+        if let thumbThreadNum = UserDefaults.standard.value(forKey: "thumbThreadNum") as? Int {
+            globalVar.thumbThreadNum = thumbThreadNum
+        }
+        if let folderSearchDepth = UserDefaults.standard.value(forKey: "folderSearchDepth") as? Int {
+            globalVar.folderSearchDepth = folderSearchDepth
+        }
+        if let thumbThreadNum_External = UserDefaults.standard.value(forKey: "thumbThreadNum_External") as? Int {
+            globalVar.thumbThreadNum_External = thumbThreadNum_External
+        }
+        if let folderSearchDepth_External = UserDefaults.standard.value(forKey: "folderSearchDepth_External") as? Int {
+            globalVar.folderSearchDepth_External = folderSearchDepth_External
+        }
+        if let doNotUseFFmpeg = UserDefaults.standard.value(forKey: "doNotUseFFmpeg") as? Bool {
+            globalVar.doNotUseFFmpeg = doNotUseFFmpeg
+        }
+        if let portableMode = UserDefaults.standard.value(forKey: "portableMode") as? Bool {
+            // Temporary disable portable mode feature
+            // globalVar.portableMode = portableMode
+        }
+        if let videoPlayRememberPosition = UserDefaults.standard.value(forKey: "videoPlayRememberPosition") as? Bool {
+            globalVar.videoPlayRememberPosition = videoPlayRememberPosition
+        }
+        if let videoPlaySequentialPlay = UserDefaults.standard.value(forKey: "videoPlaySequentialPlay") as? Bool {
+            globalVar.videoPlaySequentialPlay = videoPlaySequentialPlay
+        }
+        if let videoVolume = UserDefaults.standard.value(forKey: "videoVolume") as? Float {
+            globalVar.videoVolume = videoVolume
+        }
+        if let videoPlaybackRate = UserDefaults.standard.value(forKey: "videoPlaybackRate") as? Float {
+            globalVar.videoPlaybackRate = videoPlaybackRate
+        }
+        if let useInternalPlayer = UserDefaults.standard.value(forKey: "useInternalPlayer") as? Bool {
+            globalVar.useInternalPlayer = useInternalPlayer
+        }
+        if let isEnterKeyToOpen = UserDefaults.standard.value(forKey: "isEnterKeyToOpen") as? Bool {
+            globalVar.isEnterKeyToOpen = isEnterKeyToOpen
+        }
+        if let isEscKeyToGoBack = UserDefaults.standard.value(forKey: "isEscKeyToGoBack") as? Bool {
+            globalVar.isEscKeyToGoBack = isEscKeyToGoBack
+        }
+        if let clickEdgeToSwitchImage = UserDefaults.standard.value(forKey: "clickEdgeToSwitchImage") as? Bool {
+            globalVar.clickEdgeToSwitchImage = clickEdgeToSwitchImage
+        }
+        if let scrollMouseWheelToZoom = UserDefaults.standard.value(forKey: "scrollMouseWheelToZoom") as? Bool {
+            globalVar.scrollMouseWheelToZoom = scrollMouseWheelToZoom
+        }
+        if let scrollSensitivity = UserDefaults.standard.value(forKey: "scrollSensitivity") as? Double {
+            globalVar.scrollSensitivity = scrollSensitivity
+        }
+        if let keepFilterStateWhenSwitchFolder = UserDefaults.standard.value(forKey: "keepFilterStateWhenSwitchFolder") as? Bool {
+            globalVar.keepFilterStateWhenSwitchFolder = keepFilterStateWhenSwitchFolder
+        }
+        if let dirTreeAutoExpand = UserDefaults.standard.value(forKey: "dirTreeAutoExpand") as? Bool {
+            globalVar.dirTreeAutoExpand = dirTreeAutoExpand
+        }
+        if let largeImageViewShowTagsAndRating = UserDefaults.standard.value(forKey: "largeImageViewShowTagsAndRating") as? Bool {
+            globalVar.largeImageViewShowTagsAndRating = largeImageViewShowTagsAndRating
+        }
+        if let enhancedIndexEnabled = UserDefaults.standard.value(forKey: "enhancedIndexEnabled") as? Bool {
+            globalVar.enhancedIndexEnabled = enhancedIndexEnabled
+        }
+        if let collectionViewItemShowTooltip = UserDefaults.standard.value(forKey: "collectionViewItemShowTooltip") as? Bool {
+            globalVar.collectionViewItemShowTooltip = collectionViewItemShowTooltip
+        }
+        if let imageAIEnabled = UserDefaults.standard.value(forKey: "imageAIEnabled") as? Bool {
+            globalVar.imageAIEnabled = imageAIEnabled
+        }
+        globalVar.myFavoritesArray = defaults.array(forKey: "globalVar.myFavoritesArray") as? [String] ?? [String]()
+        
+        if let savedLabels = UserDefaults.standard.array(forKey: CustomTagView.userDefaultsKey) as? [[String: Any]] {
+            FinderTag.customLabels = savedLabels.compactMap { dict in
+                guard let name = dict["name"] as? String else { return nil }
+                return (name, dict["colorIndex"] as? Int)
+            }
+        } else {
+            FinderTag.customLabels = FinderTag.systemColorLabels.map { ($0.name, $0.colorIndex) }
+        }
+        //UserDefaults.standard.removeObject(forKey: CustomTagView.userDefaultsKey)
+
+        // requestAppleEventsPermission()
+        
+        favoritesMenu.removeAllItems()
+        favoritesMenu.delegate = self
+        historyMenu.removeAllItems()
+        historyMenu.delegate = self
+        viewMenu.delegate = self
+
+        // 初始化标签系统
+        // Initialize tagging system
+        EnhancedIndex.initialize()
+
+        log("End applicationWillFinishLaunching")
+        // End applicationWillFinishLaunching
+    }
+
+    func applicationDidFinishLaunching(_ aNotification: Notification) {
+
+        log("Start applicationDidFinishLaunching")
+        // Start applicationDidFinishLaunching
+        
+        if windowControllers.count == 0 {
+            _ = createNewWindow()
+        }
+        
+        // 移除系统菜单中 Bigger(+) / Smaller(-) 的快捷键，避免与 Cmd+= / Cmd+- 冲突
+        // Remove Bigger(+)/Smaller(-) menu key equivalents to avoid conflict with Cmd+=/Cmd+-
+        if let mainMenu = NSApp.mainMenu {
+            func removePlusMinusShortcuts(from menu: NSMenu) {
+                for item in menu.items {
+                    if let submenu = item.submenu {
+                        removePlusMinusShortcuts(from: submenu)
+                    }
+                    if item.keyEquivalent == "+" || item.keyEquivalent == "-" {
+                        log("Removed keyEquivalent '\(item.keyEquivalent)' from '\(item.title)'")
+                        item.keyEquivalent = ""
+                    }
+                }
+            }
+            removePlusMinusShortcuts(from: mainMenu)
+        }
+
+//        DispatchQueue.global(qos: .userInitiated).async {
+//            Thread.sleep(forTimeInterval: 8)
+//            FFmpegKitWrapper.shared.loadFFmpegKitIfNeeded()
+//        }
+        
+        Task {
+            await ImageAIService.shared.startIfEnabled()
+        }
+        
+        log("End applicationDidFinishLaunching")
+        // End applicationDidFinishLaunching
+    }
+
+    func applicationWillTerminate(_ aNotification: Notification) {
+        EnhancedIndex.flushPendingSave()
+        Task { @MainActor in
+            await ImageAIService.shared.stop()
+        }
+        log("App EXIT")
+        log("-----------------------------------------------------------")
+        // Logger.shared.clearLogFile()
+        UserDefaults.standard.set(true, forKey: "hasNormalExit")
+        UserDefaults.standard.synchronize()
+    }
+
+    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
+        return true
+    }
+    
+//    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+//        return true
+//    }
+    
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            // 当没有可见窗口时（例如关闭了所有窗口后点击Dock图标），创建新窗口
+            // When no visible windows (e.g. clicking Dock icon after closing all windows), create a new window
+            _ = createNewWindow()
+        }
+        return true
+    }
+    
+    func createNewWindow(_ path: String? = nil, useCreateWindowShowDelay: Bool = false, isLaunchFromFile: Bool = false, urlsToSelect: [URL]? = nil, openInBackground: Bool = false) -> WindowController? {
+        log("Start createNewWindow")
+        // Start createNewWindow
+
+        var openFolder: String? = nil
+
+        if let path = path,
+           let url = URL(string: path){
+            
+            var isDirectoryObj: ObjCBool = false
+            FileManager.default.fileExists(atPath: path, isDirectory: &isDirectoryObj)
+            let isDirectory=isDirectoryObj.boolValue
+
+            // 如果打开目录
+            // If opening directory
+            if isDirectory || path.hasSuffix("/") {
+                var tmp = url.absoluteString
+                if !tmp.hasSuffix("/"){
+                    tmp += "/"
+                }
+                openFolder=getFileSchemeAbsParentFolderPath(tmp+"xxx")
+            }else{
+                // 如果打开文件
+                // If opening file
+                openFolder=getFileSchemeAbsParentFolderPath(path)
+                if globalVar.portableMode,
+                   let originalSize=getImageInfo(url: URL(string: getFileSchemeAbsPath(path))!, needMetadata: false)?.size{
+                    globalVar.startSpeedUpImageSizeCache=originalSize
+                }
+
+                let isShowHiddenFile = UserDefaults.standard.value(forKey: "isShowHiddenFile") as? Bool ?? false
+                let isInExternalVolume = VolumeManager.shared.isExternalVolume(url)
+                if !isInExternalVolume {
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        let folderPath = getFileSchemeAbsParentFolderPath(path)
+                        guard let folderURL = URL(string: folderPath) else { return }
+                        let properties: [URLResourceKey] = [.isHiddenKey, .isDirectoryKey]
+                        guard let contents = try? FileManager.default.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: properties, options: []) else { return }
+                        var extCounts: [String: Int] = [:]
+                        for url in contents {
+                            guard let values = try? url.resourceValues(forKeys: [.isHiddenKey, .isDirectoryKey]) else { continue }
+                            if values.isHidden == true && !isShowHiddenFile { continue }
+                            if values.isDirectory == true { continue }
+                            let ext = url.pathExtension.lowercased()
+                            extCounts[ext, default: 0] += 1
+                        }
+                        globalVar.launchFileFolderExtCountsLock.lock()
+                        globalVar.launchFileFolderExtCounts[folderPath] = extCounts
+                        globalVar.launchFileFolderExtCountsLock.unlock()
+                    }
+                }
+            }
+        }
+
+        // 设置临时全局变量
+        // Set temporary global variable
+        globalVar.isLaunchFromFile = isLaunchFromFile
+
+        // 加载 Main.storyboard
+        // Load Main.storyboard
+        let storyboard = NSStoryboard(name: "Main", bundle: nil)
+        
+        // 实例化 WindowController
+        // Instantiate WindowController
+        guard let windowController = storyboard.instantiateController(withIdentifier: "WindowController") as? WindowController else {
+            fatalError("Cannot find WindowController in Main.storyboard")
+        }
+        
+        // 添加到 windowControllers 数组
+        // Add to windowControllers array
+        windowControllers.append(windowController)
+        globalVar.windowNum += 1
+        
+        // 显示窗口
+        // Show window
+        if !useCreateWindowShowDelay {
+            if openInBackground {
+                // 后台打开：显示窗口但不抢占焦点
+                // Open in background: show window without stealing focus
+                windowController.window?.orderBack(nil)
+            } else {
+                windowController.showWindow(self)
+            }
+        }
+        
+        // 获取 contentViewController 并调用其函数
+        // Get contentViewController and call its function
+        if let viewController = windowController.contentViewController as? ViewController {
+            if let openFolder=openFolder{
+                viewController.fileDB.lock()
+                viewController.fileDB.curFolder=openFolder
+                viewController.fileDB.unlock()
+            }
+            if let urlsToSelect = urlsToSelect {
+                viewController.publicVar.filesForLocateAfterChange = urlsToSelect.map { $0.absoluteString }
+                viewController.publicVar.filesForLocateAfterChangeTime = .now()
+            }
+            DispatchQueue.main.async {
+                viewController.afterFinishLoad(openFolder)
+            }
+        } else {
+            log("Content view controller is not of type ViewController")
+        }
+        
+        return windowController
+    }
+    
+    func removeWindowController(_ windowController: NSWindowController) {
+        if let index = windowControllers.firstIndex(of: windowController) {
+            windowControllers.remove(at: index)
+        }
+    }
+
+    func application(_ application: NSApplication, openFiles files: [String]) {
+        NSApplication.shared.reply(toOpenOrPrint: .success)
+        for filePath in files {
+            log(filePath)
+        }
+        
+        for path in files {
+            var path = path
+            if path == "." {
+                path = FileManager.default.currentDirectoryPath
+            }
+            
+            var file = getFileSchemeAbsPath(path)
+            if let url=URL(string: file){
+                NSDocumentController.shared.noteNewRecentDocumentURL(url)
+            }
+            
+            var isDirectoryObj: ObjCBool = false
+            FileManager.default.fileExists(atPath: path, isDirectory: &isDirectoryObj)
+            let isDirectory=isDirectoryObj.boolValue
+            
+            if isDirectory && file.last != "/" {file=file+"/"}
+            
+            // 新窗口打开
+            // Open in new window
+            if isDirectory{
+                _ = createNewWindow(file)
+            }else{
+                var useCreateWindowShowDelay = false
+                if windowControllers.count == 0 || globalVar.autoHideToolbar {
+                    // 直到大图加载完毕后才显示窗口，用来减少首次启动的画面闪动
+                    // Don't show window until large image is loaded, to reduce startup screen flicker
+                    // 对于多标签页情况的第二个标签页，使用此会导致大图的缩放是按上次记忆而不是当前窗口实际大小，因此除这两种情况外不适合使用
+                    // For second tab in multi-tab case, using this will cause large image scaling to be based on last memory rather than current window actual size, so it's not suitable except for these two cases
+                    useCreateWindowShowDelay = true
+                }
+                if let targetWindowController = createNewWindow(file, useCreateWindowShowDelay: useCreateWindowShowDelay, isLaunchFromFile: true) {
+                    openImageInTargetWindow(file, windowController: targetWindowController)
+                }
+            }
+        }
+    }
+    
+    func openImageInMainWindow(_ openPath: String){
+//        guard let mainViewController=getMainViewController() else {return}
+//        let folderPath=getFileStyleFolderPath(openPath)
+//        let path=getFileStylePath(openPath)
+//        
+//        mainViewController.publicVar.openFromFinderPath=path
+//        mainViewController.OpenLargeImageFromFinder(path: path)
+//        mainViewController.switchDirByDirection(direction: .zero, dest: folderPath, doCollapse: true, expandLast: true, skip: false)
+//        
+        
+        guard let mainWindowController = NSApplication.shared.mainWindow?.windowController else {return}
+        openImageInTargetWindow(openPath, windowController: mainWindowController)
+    }
+    
+    func openImageInTargetWindow(_ openPath: String, windowController: NSWindowController){
+        guard let viewController = windowController.contentViewController as? ViewController else {return}
+        let folderPath=getFileSchemeAbsParentFolderPath(openPath)
+        let path=getFileSchemeAbsPath(openPath)
+        
+        viewController.publicVar.openFromFinderPath=path
+        viewController.OpenLargeImageFromFinder(path: path)
+        DispatchQueue.main.async {
+            viewController.switchDirByDirection(direction: .zero, dest: folderPath, doCollapse: true, expandLast: true, skip: false, stackDeep: 0)
+        }
+    }
+        
+    @IBAction func openDocument(_ sender: Any?) {
+        let dialog = NSOpenPanel()
+        
+        dialog.title                   = NSLocalizedString("Choose a file or folder", comment: "选择一个文件或文件夹")
+        dialog.showsResizeIndicator    = true
+        dialog.showsHiddenFiles        = false
+        dialog.allowsMultipleSelection = false
+        dialog.canChooseDirectories    = true
+        dialog.allowedFileTypes        = globalVar.HandledImageAndRawExtensions
+        
+        if (dialog.runModal() == NSApplication.ModalResponse.OK) {
+            if let result = dialog.url {
+                // Add the selected document to recent documents
+                NSDocumentController.shared.noteNewRecentDocumentURL(result)
+                
+                log("Selected file: \(result.path)")
+                
+                // 本窗口打开
+                // Open in current window
+                // getMainViewController()?.handleDraggedFiles([result])
+                
+                // 新窗口打开
+                // Open in new window
+                var isDirectoryObj: ObjCBool = false
+                FileManager.default.fileExists(atPath: result.path, isDirectory: &isDirectoryObj)
+                let isDirectory=isDirectoryObj.boolValue
+                if isDirectory {
+                    _ = createNewWindow(result.absoluteString)
+                }else{
+                    if let windowController = createNewWindow(result.absoluteString, isLaunchFromFile: true) {
+                        openImageInTargetWindow(result.absoluteString, windowController: windowController)
+                    }
+                }
+            }
+        } else {
+            // User clicked on "Cancel"
+            return
+        }
+    }
+    
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard let mainViewController=getMainViewController() else{return}
+        if menu == favoritesMenu {
+            favoritesMenu.removeAllItems()
+            
+            let addFolderMenuItem = NSMenuItem(
+                title: NSLocalizedString("Add Current Folder", comment: "添加当前文件夹"),
+                action: #selector(favoritesAdd(_:)),
+                keyEquivalent: "d"
+            )
+            addFolderMenuItem.target = self
+            addFolderMenuItem.keyEquivalentModifierMask = .command
+            favoritesMenu.addItem(addFolderMenuItem)
+            
+            favoritesMenu.addItem(NSMenuItem.separator())
+            
+            if globalVar.myFavoritesArray.count > 0 {
+                for (index, folderPath) in globalVar.myFavoritesArray.enumerated() {
+                    if folderPath == FavoritesPopoverViewController.separatorValue {
+                        favoritesMenu.addItem(NSMenuItem.separator())
+                        continue
+                    }
+                    
+                    let displayTitle = folderPath
+                        .replacingOccurrences(of: "file://", with: "")
+                        .removingPercentEncoding!
+                        .replacingOccurrences(of: "/VirtualFinderTagsFolder", with: NSLocalizedString("Finder Tags", comment: "Finder标签"))
+                    let folderMenuItem = NSMenuItem(
+                        title: displayTitle,
+                        action: #selector(pathClick(_:)),
+                        keyEquivalent: ""
+                    )
+                    folderMenuItem.target = self
+                    folderMenuItem.representedObject = folderPath
+                    
+                    // 创建子菜单
+                    // Create submenu
+                    let subMenu = NSMenu(title: folderPath)
+                    
+                    // 创建删除项
+                    // Create delete item
+                    let deleteMenuItem = NSMenuItem(
+                        title: NSLocalizedString("Delete", comment: "删除"),
+                        action: #selector(deleteFavorite(_:)),
+                        keyEquivalent: ""
+                    )
+                    deleteMenuItem.target = self
+                    deleteMenuItem.representedObject = folderPath
+                    
+                    // 创建上移项
+                    // Create move up item
+                    let moveUpMenuItem = NSMenuItem(
+                        title: NSLocalizedString("Move Up", comment: "上移"),
+                        action: #selector(moveUpFavorite(_:)),
+                        keyEquivalent: ""
+                    )
+                    moveUpMenuItem.target = self
+                    moveUpMenuItem.representedObject = index
+                    
+                    // 创建下移项
+                    // Create move down item
+                    let moveDownMenuItem = NSMenuItem(
+                        title: NSLocalizedString("Move Down", comment: "下移"),
+                        action: #selector(moveDownFavorite(_:)),
+                        keyEquivalent: ""
+                    )
+                    moveDownMenuItem.target = self
+                    moveDownMenuItem.representedObject = index
+                    
+                    // 将项添加到子菜单
+                    // Add items to submenu
+                    subMenu.addItem(deleteMenuItem)
+                    subMenu.addItem(moveUpMenuItem)
+                    subMenu.addItem(moveDownMenuItem)
+                    
+                    // 将子菜单添加到主菜单项
+                    // Add submenu to main menu item
+                    folderMenuItem.submenu = subMenu
+                    
+                    // 将主菜单项添加到 favoritesMenu
+                    // Add main menu item to favoritesMenu
+                    favoritesMenu.addItem(folderMenuItem)
+                }
+            } else {
+                let emptyMenuItem = NSMenuItem(
+                    title: NSLocalizedString("empty-enclose", comment: "菜单当内容为空时显示的东西"),
+                    action: nil,
+                    keyEquivalent: ""
+                )
+                favoritesMenu.addItem(emptyMenuItem)
+            }
+        }
+        
+        if menu == historyMenu {
+            historyMenu.removeAllItems()
+
+            // 返回、前进
+            // Back, forward
+            let backMenuItem = NSMenuItem(title: NSLocalizedString("Go Back", comment: "后退"), action: #selector(historyBack(_:)), keyEquivalent: "[")
+            backMenuItem.keyEquivalentModifierMask=[.command]
+            backMenuItem.target = self
+            historyMenu.addItem(backMenuItem)
+            
+            let forwardMenuItem = NSMenuItem(title: NSLocalizedString("Go Forward", comment: "前进"), action: #selector(historyForward(_:)), keyEquivalent: "]")
+            forwardMenuItem.keyEquivalentModifierMask=[.command]
+            forwardMenuItem.target = self
+            historyMenu.addItem(forwardMenuItem)
+
+            historyMenu.addItem(NSMenuItem.separator())
+
+            if mainViewController.publicVar.folderStepStack.count > 0 {
+                for item in mainViewController.publicVar.folderStepStack {
+                    let historyDisplayTitle = item
+                        .replacingOccurrences(of: "file://", with: "")
+                        .removingPercentEncoding!
+                        .replacingOccurrences(of: "/VirtualFinderTagsFolder", with: NSLocalizedString("Finder Tags", comment: "Finder标签"))
+                    let menuItem = NSMenuItem(title: historyDisplayTitle, action: #selector(pathClick(_:)), keyEquivalent: "")
+                    menuItem.representedObject = item
+                    menuItem.target = self
+                    historyMenu.addItem(menuItem)
+                }
+            }else{
+                let menuItem = NSMenuItem(title: NSLocalizedString("empty-enclose", comment: "菜单当内容为空时显示的东西"), action: nil, keyEquivalent: "")
+                menuItem.target = self
+                historyMenu.addItem(menuItem)
+            }
+        }
+        
+        if menu == viewMenu {
+            let theme=NSApp.effectiveAppearance.name
+            if NSApp.appearance == nil {
+                systemThemeMenuItem.state = .on
+                lightModeMenuItem.state = .off
+                darkModeMenuItem.state = .off
+            }else{
+                systemThemeMenuItem.state = .off
+                lightModeMenuItem.state = (theme == .darkAqua) ? .off : .on
+                darkModeMenuItem.state = (theme == .darkAqua) ? .on : .off
+            }
+            
+            if let window = NSApplication.shared.mainWindow {
+                onTopMenuItem.state = (window.level == .floating) ? .on : .off
+            }
+            onTopMenuItem.keyEquivalent="t"
+            onTopMenuItem.keyEquivalentModifierMask=[]
+            
+            toggleIsShowHiddenFileMenuItem.state = mainViewController.publicVar.isShowHiddenFile ? .on : .off
+            toggleIsShowAllTypeFileMenuItem.state = mainViewController.publicVar.isShowAllTypeFile ? .on : .off
+            toggleIsShowImageFileMenuItem.state = mainViewController.publicVar.isShowImageFile ? .on : .off
+            toggleIsShowRawFileMenuItem.state = mainViewController.publicVar.isShowRawFile ? .on : .off
+            toggleIsShowVideoFileMenuItem.state = mainViewController.publicVar.isShowVideoFile ? .on : .off
+
+            toggleIsShowHiddenFileMenuItem.isHidden = mainViewController.publicVar.isInLargeView
+            toggleIsShowAllTypeFileMenuItem.isHidden = mainViewController.publicVar.isInLargeView
+            toggleIsShowImageFileMenuItem.isHidden = mainViewController.publicVar.isInLargeView
+            toggleIsShowRawFileMenuItem.isHidden = mainViewController.publicVar.isInLargeView
+            toggleIsShowVideoFileMenuItem.isHidden = mainViewController.publicVar.isInLargeView
+            
+            justifiedViewMenuItem.state = (mainViewController.publicVar.profile.layoutType == .justified) ? .on : .off
+            waterfallViewModeMenuItem.state = (mainViewController.publicVar.profile.layoutType == .waterfall) ? .on : .off
+            gridViewMenuItem.state = (mainViewController.publicVar.profile.layoutType == .grid) ? .on : .off
+            detailViewModeMenuItem.state = (mainViewController.publicVar.profile.layoutType == .detail) ? .on : .off
+
+            justifiedViewMenuItem.isHidden = mainViewController.publicVar.isInLargeView
+            waterfallViewModeMenuItem.isHidden = mainViewController.publicVar.isInLargeView
+            gridViewMenuItem.isHidden = mainViewController.publicVar.isInLargeView
+            //detailViewModeMenuItem.isHidden = mainViewController.publicVar.isInLargeView
+            
+            maximizeWindowMenuItem.keyEquivalent="1"
+            maximizeWindowMenuItem.keyEquivalentModifierMask=[]
+            optimizeWindowMenuItem.keyEquivalent="2"
+            optimizeWindowMenuItem.keyEquivalentModifierMask=[]
+            adjustWindowActualMenuItem.keyEquivalent="3"
+            adjustWindowActualMenuItem.keyEquivalentModifierMask=[]
+            adjustWindowCurrentMenuItem.keyEquivalent="4"
+            adjustWindowCurrentMenuItem.keyEquivalentModifierMask=[]
+            adjustWindowToCenterMenuItem.keyEquivalent="5"
+            adjustWindowToCenterMenuItem.keyEquivalentModifierMask=[]
+            
+//            justifiedViewMenuItem.keyEquivalent="1"
+//            justifiedViewMenuItem.keyEquivalentModifierMask=[]
+//            waterfallViewModeMenuItem.keyEquivalent="2"
+//            waterfallViewModeMenuItem.keyEquivalentModifierMask=[]
+//            gridViewMenuItem.keyEquivalent="3"
+//            gridViewMenuItem.keyEquivalentModifierMask=[]
+//            detailViewModeMenuItem.keyEquivalent="4"
+//            detailViewModeMenuItem.keyEquivalentModifierMask=[]
+            
+            switchToActualSizeMenuItem.state = (mainViewController.publicVar.isLargeImageFitWindow == false) ? .on : .off
+            switchToFitToWindowMenuItem.state = (mainViewController.publicVar.isLargeImageFitWindow == true) ? .on : .off
+            
+            toggleSidebarMenuItem.state = (mainViewController.publicVar.profile.isDirTreeHidden == false) ? .on : .off
+            toggleSidebarMenuItem.keyEquivalent="f"
+            toggleSidebarMenuItem.keyEquivalentModifierMask=[]
+            toggleSidebarMenuItem.isHidden = mainViewController.publicVar.isInLargeView
+
+            customLayoutStyleMenuItem.isHidden = mainViewController.publicVar.isInLargeView
+
+            lockRotationMenuItem.state = mainViewController.publicVar.isRotationLocked ? .on : .off
+            lockZoomMenuItem.state = mainViewController.publicVar.isZoomLocked ? .on : .off
+            lockMirrorMenuItem.state = mainViewController.publicVar.isMirrorLocked ? .on : .off
+            activatePanScrollMenuItem.state = mainViewController.publicVar.isPanWhenZoomed ? .on : .off
+            toggleRawUseEmbeddedThumbMenuItem.state = mainViewController.publicVar.isRawUseEmbeddedThumb ? .on : .off
+
+            lockRotationMenuItem.isHidden = !mainViewController.publicVar.isInLargeView
+            lockZoomMenuItem.isHidden = !mainViewController.publicVar.isInLargeView
+            lockMirrorMenuItem.isHidden = !mainViewController.publicVar.isInLargeView
+            activatePanScrollMenuItem.isHidden = !(mainViewController.publicVar.isInLargeView && mainViewController.largeImageView.file.type == .image)
+            activatePanScrollReadmeMenuItem.isHidden = !(mainViewController.publicVar.isInLargeView && mainViewController.largeImageView.file.type == .image)
+            toggleRawUseEmbeddedThumbMenuItem.isHidden = !(mainViewController.publicVar.isInLargeView && mainViewController.largeImageView.file.type == .image)
+            toggleRawUseEmbeddedThumbReadmeMenuItem.isHidden = !(mainViewController.publicVar.isInLargeView && mainViewController.largeImageView.file.type == .image)
+
+            showFinderTagsAndRatingMenuItem.state = globalVar.largeImageViewShowTagsAndRating ? .on : .off
+            showFinderTagsAndRatingMenuItem.isHidden = !mainViewController.publicVar.isInLargeView
+        }
+    }
+    
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        // 如果焦点在标准文本控件上，启用复制/剪切/粘贴/选择全部菜单
+        // If focus is on standard text controls, enable copy/cut/paste/select all menu
+        if menuItem.action == #selector(editCopy(_:)) || menuItem.action == #selector(editCut(_:)) || menuItem.action == #selector(editPaste(_:)) || menuItem.action == #selector(selectAll(_:)) {
+            if let firstResponder = NSApp.keyWindow?.firstResponder,
+               firstResponder is NSTextView || firstResponder is NSTextField {
+                return true
+            }
+        }
+        guard let mainViewController=getMainViewController() else{
+            // 如果没有窗口，则只有新建标签页为有效，其它皆为无效
+            // If no window, only new tab is valid, all others are invalid
+            if menuItem.action == #selector(fileNewTab(_:)) {
+                return true
+            }else{
+                return false
+            }
+        }
+        // 重新打开关闭的标签页
+        // Reopen closed tabs
+        if menuItem.action == #selector(reopenClosedTabs(_:)) {
+            if globalVar.closedPaths.isEmpty {
+                return false
+            }else{
+                return true
+            }
+        }
+        // 返回、前进
+        // Back, forward
+        if menuItem.action == #selector(historyBack(_:)) {
+            if (mainViewController.publicVar.folderStepStack.count > 0) && (!mainViewController.publicVar.isInLargeView) {
+                return true
+            }else{
+                return false
+            }
+        }
+        if menuItem.action == #selector(historyForward(_:)) {
+            if (mainViewController.publicVar.folderStepForwardStack.count > 0) && (!mainViewController.publicVar.isInLargeView) {
+                return true
+            }else{
+                return false
+            }
+        }
+        // 根据图片大小调整窗口
+        // Adjust window based on image size
+        if menuItem.action == #selector(adjustWindowActual(_:)) || menuItem.action == #selector(adjustWindowCurrent(_:)) {
+            if !mainViewController.publicVar.isInLargeView {
+                return false
+            }
+        }
+        // 复制、剪切、删除
+        // Copy, cut, delete
+        if menuItem.action == #selector(editCopy(_:)) || menuItem.action == #selector(editCut(_:)) || menuItem.action == #selector(editDelete(_:)) {
+            if mainViewController.publicVar.isKeyEventEnabled == false {
+                return false
+            }
+//            if !mainViewController.publicVar.isOutlineViewFirstResponder && !mainViewController.publicVar.isCollectionViewFirstResponder {
+//                return false
+//            }
+            // 如果焦点在OutlineView
+            // If focus is on OutlineView
+            if mainViewController.publicVar.isOutlineViewFirstResponder{
+                if let url = mainViewController.outlineView.getFirstSelectedUrl() {
+                    if url.absoluteString.hasPrefix("file:///VirtualFinderTagsFolder") {
+                        return false
+                    }
+                } else {
+                    return false
+                }
+            }
+            // 如果焦点在CollectionView
+            // If focus is on CollectionView
+            if mainViewController.publicVar.isCollectionViewFirstResponder{
+                if mainViewController.publicVar.selectedUrls().count == 0 {
+                    return false
+                }
+            }
+        }
+        // 粘贴、移动
+        // Paste, move
+        if menuItem.action == #selector(editPaste(_:)) || menuItem.action == #selector(editMove(_:)) {
+            if mainViewController.publicVar.isKeyEventEnabled == false {
+                return false
+            }
+            if !mainViewController.publicVar.isOutlineViewFirstResponder && !mainViewController.publicVar.isCollectionViewFirstResponder {
+                return false
+            }
+            if mainViewController.publicVar.isInLargeView {
+                return false
+            }
+            if mainViewController.fileDB.curFolder.hasPrefix("file:///VirtualFinderTagsFolder") {
+                return false
+            }
+            let pasteboard = NSPasteboard.general
+            let types = pasteboard.types ?? []
+            if !types.contains(.fileURL) {
+                return false
+            }
+        }
+        // 选择全部、搜索
+        // Select all, search
+        if menuItem.action == #selector(selectAll(_:)) || menuItem.action == #selector(showSearch(_:)) {
+            if mainViewController.publicVar.isInLargeView {
+                return false
+            }
+        }
+        // 取消选择
+        // Deselect
+        if menuItem.action == #selector(deselectAll(_:)) {
+            if mainViewController.publicVar.isInLargeView {
+                return false
+            }
+            // 如果焦点在CollectionView
+            // If focus is on CollectionView
+            if mainViewController.publicVar.isCollectionViewFirstResponder{
+                if mainViewController.publicVar.selectedUrls().count == 0 {
+                    return false
+                }
+            }else{
+                return false
+            }
+        }
+        // 是否是显示全部文件类型
+        // Whether to show all file types
+        if menuItem.action == #selector(toggleIsShowImageFile(_:)) || menuItem.action == #selector(toggleIsShowRawFile(_:)) || menuItem.action == #selector(toggleIsShowVideoFile(_:)) {
+            if mainViewController.publicVar.isShowAllTypeFile {
+                return false
+            }
+        }
+        // 锁定缩放、镜像
+        // Lock zoom, mirror
+        if menuItem.action == #selector(toggleLockZoom(_:)) || menuItem.action == #selector(toggleLockMirror(_:)) {
+            if mainViewController.largeImageView.file.type != .image {
+                return false
+            }
+        }
+        return true
+    }
+    
+    @IBAction
+    func settingsMenuItemActionHandler(_ sender: NSMenuItem) {
+        settingsWindowController.show()
+    }
+
+    @objc func pathClick(_ sender: NSMenuItem) {
+        guard let mainViewController=getMainViewController() else {return}
+        log("Clicked on \(sender.title)")
+
+        let rawPath = (sender.representedObject as? String) ?? sender.title
+        guard let url=URL(string: getFileSchemeAbsPath(rawPath)) else {return}
+        if mainViewController.publicVar.isInLargeView {
+            mainViewController.closeLargeImage(0)
+        }
+        mainViewController.switchDirByDirection(direction: .zero, dest: url.absoluteString, doCollapse: true, expandLast: true, skip: false, stackDeep: 0)
+    }
+    
+    @objc func favoritesAdd(_ sender: NSMenuItem) {
+        guard let mainViewController=getMainViewController() else {return}
+        mainViewController.fileDB.lock()
+        let curFolder=mainViewController.fileDB.curFolder
+        mainViewController.fileDB.unlock()
+        if !globalVar.myFavoritesArray.contains(curFolder) {
+            globalVar.myFavoritesArray.append(curFolder)
+            let defaults = UserDefaults.standard
+            defaults.set(globalVar.myFavoritesArray, forKey: "globalVar.myFavoritesArray")
+        }
+    }
+    @objc func deleteFavorite(_ sender: NSMenuItem) {
+        guard let folderPath = sender.representedObject as? String else { return }
+        
+        // 在这里处理删除逻辑
+        // Handle delete logic here
+        if let index = globalVar.myFavoritesArray.firstIndex(of: folderPath) {
+            globalVar.myFavoritesArray.remove(at: index)
+            let defaults = UserDefaults.standard
+            defaults.set(globalVar.myFavoritesArray, forKey: "globalVar.myFavoritesArray")
+        }
+        
+        // 更新菜单以反映更改
+        // Update menu to reflect changes
+        // menuNeedsUpdate(favoritesMenu)
+    }
+    @objc func moveUpFavorite(_ sender: NSMenuItem) {
+        guard let index = sender.representedObject as? Int, index > 0 else { return }
+        
+        // 在这里处理上移逻辑
+        // Handle move up logic here
+        globalVar.myFavoritesArray.swapAt(index, index - 1)
+        let defaults = UserDefaults.standard
+        defaults.set(globalVar.myFavoritesArray, forKey: "globalVar.myFavoritesArray")
+        
+        // 更新菜单以反映更改
+        // Update menu to reflect changes
+        // menuNeedsUpdate(favoritesMenu)
+    }
+
+    @objc func moveDownFavorite(_ sender: NSMenuItem) {
+        guard let index = sender.representedObject as? Int, index < globalVar.myFavoritesArray.count - 1 else { return }
+        
+        // 在这里处理下移逻辑
+        // Handle move down logic here
+        globalVar.myFavoritesArray.swapAt(index, index + 1)
+        let defaults = UserDefaults.standard
+        defaults.set(globalVar.myFavoritesArray, forKey: "globalVar.myFavoritesArray")
+        
+        // 更新菜单以反映更改
+        // Update menu to reflect changes
+        // menuNeedsUpdate(favoritesMenu)
+    }
+    
+    @IBAction func editOperationLogs(_ sender: NSMenuItem){
+        getMainViewController()?.handleShowOperationLogs()
+    }
+    
+    @IBAction func editMove(_ sender: NSMenuItem){
+        // 如果焦点在标准文本控件上，使用系统默认的移动行为（不支持）
+        // If focus is on standard text controls, use system default move behavior (not supported)
+        if let firstResponder = NSApp.keyWindow?.firstResponder {
+            if firstResponder is NSTextView || firstResponder is NSTextField { return }
+        }
+        getMainViewController()?.handleMove()
+    }
+    
+    @IBAction func editCut(_ sender: NSMenuItem){
+        // 如果焦点在标准文本控件上，使用系统默认的剪切行为
+        // If focus is on standard text controls, use system default cut behavior
+        if let firstResponder = NSApp.keyWindow?.firstResponder {
+            if firstResponder is NSTextView || firstResponder is NSTextField {
+                firstResponder.tryToPerform(#selector(NSText.cut(_:)), with: nil)
+                return
+            }
+        }
+        
+        guard let mainViewController=getMainViewController() else{return}
+        
+        // 先清除上一次剪切的变淡效果
+        // Clear dim effect from previous cut
+        mainViewController.clearCutItemsDimEffect()
+        
+        // 收集即将被剪切的文件路径
+        // Collect file paths about to be cut
+        var cutUrls: [URL] = []
+        if mainViewController.publicVar.isInLargeView {
+            cutUrls = [URL(string: mainViewController.largeImageView.file.path)].compactMap { $0 }
+        } else if mainViewController.publicVar.isOutlineViewFirstResponder {
+            if let url = mainViewController.outlineView.getFirstSelectedUrl() {
+                cutUrls = [url]
+            }
+        } else if mainViewController.publicVar.isCollectionViewFirstResponder {
+            cutUrls = mainViewController.publicVar.selectedUrls()
+        }
+        
+        // 复用复制逻辑，将文件URL复制到剪贴板
+        // Reuse copy logic, copy file URLs to pasteboard
+        if mainViewController.publicVar.isInLargeView {
+            mainViewController.largeImageView.actCopy()
+        }else{
+            // 如果焦点在OutlineView
+            // If focus is on OutlineView
+            if mainViewController.publicVar.isOutlineViewFirstResponder{
+                mainViewController.outlineView.actCopy(isByKeyboard: true)
+            }
+            // 如果焦点在CollectionView
+            // If focus is on CollectionView
+            if mainViewController.publicVar.isCollectionViewFirstResponder{
+                mainViewController.handleCopy()
+            }
+        }
+        
+        // 设置剪切模式标志，下次粘贴时将执行移动操作
+        // Set cut mode flag, next paste will perform move operation
+        globalVar.isCutMode = true
+        
+        // 记录被剪切的路径并应用变淡效果
+        // Record cut paths and apply dim effect
+        globalVar.cutItemPaths = Set(cutUrls.map { $0.absoluteString })
+        mainViewController.applyCutItemsDimEffect()
+    }
+    
+    @IBAction func editCopy(_ sender: NSMenuItem){
+        // 如果焦点在标准文本控件上，使用系统默认的复制行为
+        // If focus is on standard text controls, use system default copy behavior
+        if let firstResponder = NSApp.keyWindow?.firstResponder {
+            if firstResponder is NSTextView || firstResponder is NSTextField {
+                firstResponder.tryToPerform(#selector(NSText.copy(_:)), with: nil)
+                return
+            }
+        }
+
+        guard let mainViewController=getMainViewController() else{return}
+
+        if mainViewController.publicVar.isInLargeView {
+            mainViewController.largeImageView.actCopy()
+        }else{
+            // 如果焦点在OutlineView
+            // If focus is on OutlineView
+            if mainViewController.publicVar.isOutlineViewFirstResponder{
+                mainViewController.outlineView.actCopy(isByKeyboard: true)
+            }
+            // 如果焦点在CollectionView
+            // If focus is on CollectionView
+            if mainViewController.publicVar.isCollectionViewFirstResponder{
+                mainViewController.handleCopy()
+            }
+        }
+    }
+    
+    @IBAction func editPaste(_ sender: NSMenuItem){
+        // 如果焦点在标准文本控件上，使用系统默认的粘贴行为
+        // If focus is on standard text controls, use system default paste behavior
+        if let firstResponder = NSApp.keyWindow?.firstResponder {
+            if firstResponder is NSTextView || firstResponder is NSTextField {
+                firstResponder.tryToPerform(#selector(NSText.paste(_:)), with: nil)
+                return
+            }
+        }
+        getMainViewController()?.handlePaste()
+    }
+    
+    @IBAction func editDelete(_ sender: NSMenuItem){
+        // 注意：由于未知原因有时无法触发，因此主要在按键监听里处理
+        // Note: Sometimes cannot trigger for unknown reasons, so mainly handled in key listener
+        // 如果焦点在标准文本控件上，不处理，因为单键无法触发，这里做个防御操作
+        // If focus is on standard text controls, do not handle, because single key cannot trigger, here is a defensive operation
+        if let firstResponder = NSApp.keyWindow?.firstResponder {
+            if firstResponder is NSTextView || firstResponder is NSTextField { return }
+        }
+        guard let mainViewController=getMainViewController() else{return}
+        if mainViewController.publicVar.isInLargeView {
+            mainViewController.handleDelete()
+        }else{
+            // 如果焦点在OutlineView
+            // If focus is on OutlineView
+            if mainViewController.publicVar.isOutlineViewFirstResponder{
+                mainViewController.outlineView.actDelete(isByKeyboard: true)
+            }
+            // 如果焦点在CollectionView
+            // If focus is on CollectionView
+            if mainViewController.publicVar.isCollectionViewFirstResponder{
+                mainViewController.handleDelete()
+            }
+        }
+    }
+
+    @IBAction func historyBack(_ sender: NSMenuItem){
+        getMainViewController()?.handleHistoryBack()
+    }
+    
+    @IBAction func historyForward(_ sender: NSMenuItem){
+        getMainViewController()?.handleHistoryForward()
+    }
+    
+    @IBAction func fileNewTab(_ sender: NSMenuItem){
+        getMainViewController()?.fileDB.lock()
+        let curFolder = getMainViewController()?.fileDB.curFolder
+        getMainViewController()?.fileDB.unlock()
+        createNewWindow(curFolder)
+    }
+
+    @IBAction func reopenClosedTabs(_ sender: NSMenuItem){
+        getMainViewController()?.handleReopenClosedTabs()
+    }
+    
+    @IBAction func fileNewFolder(_ sender: NSMenuItem){
+        getMainViewController()?.handleNewFolder()
+    }
+    
+    @IBAction func gotoFolder(_ sender: NSMenuItem){
+        getMainViewController()?.showCmdShiftGWindow()
+    }
+    
+    @IBAction func filePrint(_ sender: NSMenuItem){
+        getMainViewController()?.handlePrint()
+    }
+    
+    @IBAction func filePageSetup(_ sender: NSMenuItem){
+        let pageLayout = NSPageLayout()
+        let printInfo = NSPrintInfo.shared
+        
+        pageLayout.runModal(with: printInfo)
+    }
+
+    @IBAction func toggleShowFinderTagsAndRating(_ sender: NSMenuItem){
+        getMainViewController()?.toggleLargeImageViewShowTagsAndRating()
+    }
+
+    @IBAction func toggleLockRotation(_ sender: NSMenuItem){
+        getMainViewController()?.toggleLockRotation()
+    }
+    
+    @IBAction func toggleLockZoom(_ sender: NSMenuItem){
+        getMainViewController()?.toggleLockZoom()
+    }
+
+    @IBAction func toggleLockMirror(_ sender: NSMenuItem){
+        getMainViewController()?.toggleLockMirror()
+    }
+
+    @IBAction func toggleActivatePanScroll(_ sender: NSMenuItem){
+        getMainViewController()?.togglePanWhenZoomed()
+    }
+    
+    @IBAction func toggleActivatePanScrollReadme(_ sender: NSMenuItem){
+        showInformationLong(title: NSLocalizedString("Info", comment: "说明"), message: NSLocalizedString("pan-zoom-info", comment: "对于缩放后平移的说明..."), width: 300)
+    }
+
+    @IBAction func toggleRawUseEmbeddedThumb(_ sender: NSMenuItem){
+        getMainViewController()?.toggleRawUseEmbeddedThumb()
+    }
+    
+    @IBAction func toggleRawUseEmbeddedThumbReadme(_ sender: NSMenuItem){
+        showInformationLong(title: NSLocalizedString("Info", comment: "说明"), message: NSLocalizedString("raw-use-embeded-info", comment: "raw使用exif内嵌缩略图替代浏览的说明..."), width: 300)
+    }
+    
+    @IBAction func toggleIsShowHiddenFile(_ sender: NSMenuItem){
+        getMainViewController()?.toggleIsShowHiddenFile()
+    }
+    
+    @IBAction func toggleIsShowImageFile(_ sender: NSMenuItem){
+        getMainViewController()?.toggleIsShowImageFile()
+    }
+    
+    @IBAction func toggleIsShowRawFile(_ sender: NSMenuItem){
+        getMainViewController()?.toggleIsShowRawFile()
+    }
+    
+    @IBAction func toggleIsShowVideoFile(_ sender: NSMenuItem){
+        getMainViewController()?.toggleIsShowVideoFile()
+    }
+    
+    @IBAction func toggleIsShowAllTypeFile(_ sender: NSMenuItem){
+        getMainViewController()?.toggleIsShowAllTypeFile()
+    }
+    
+    @IBAction func switchToSystemTheme(_ sender: NSMenuItem){
+        let defaults = UserDefaults.standard
+        defaults.set("", forKey: "appearance")
+        NSApp.appearance=nil
+    }
+    
+    @IBAction func switchToLightMode(_ sender: NSMenuItem){
+        let defaults = UserDefaults.standard
+        defaults.set("aqua", forKey: "appearance")
+        NSApp.appearance=NSAppearance(named: .aqua)
+    }
+    
+    @IBAction func switchToDarkMode(_ sender: NSMenuItem){
+        let defaults = UserDefaults.standard
+        defaults.set("darkAqua", forKey: "appearance")
+        NSApp.appearance=NSAppearance(named: .darkAqua)
+    }
+    
+    @IBAction func maximizeWindow(_ sender: NSMenuItem){
+        getMainViewController()?.adjustWindowMaximize()
+    }
+    
+    @IBAction func optimizeWindow(_ sender: NSMenuItem){
+        getMainViewController()?.adjustWindowSuitable()
+    }
+    
+    @IBAction func adjustWindowActual(_ sender: NSMenuItem){
+        getMainViewController()?.adjustWindowImageActual()
+    }
+    
+    @IBAction func adjustWindowCurrent(_ sender: NSMenuItem){
+        getMainViewController()?.adjustWindowImageCurrent()
+    }
+    
+    @IBAction func adjustWindowToCenter(_ sender: NSMenuItem){
+        getMainViewController()?.adjustWindowToCenter()
+    }
+    
+    @IBAction func switchToJustifiedView(_ sender: NSMenuItem){
+        getMainViewController()?.switchToJustifiedView()
+    }
+    
+    @IBAction func switchToGridView(_ sender: NSMenuItem){
+        getMainViewController()?.switchToGridView()
+    }
+    
+    @IBAction func switchToWaterfallView(_ sender: NSMenuItem){
+        getMainViewController()?.switchToWaterfallView()
+    }
+    
+    @IBAction func switchToDetailView(_ sender: NSMenuItem){
+        getMainViewController()?.switchToDetailView()
+    }
+    
+    @IBAction func switchToActualSize(_ sender: NSMenuItem){
+        getMainViewController()?.switchToActualSizeForLargeImage()
+        
+    }
+    @IBAction func switchToFitToWindow(_ sender: NSMenuItem){
+        getMainViewController()?.switchToFitToWindowForLargeImage()
+    }
+    
+    @IBAction func toggleSidebar(_ sender: NSMenuItem){
+        getMainViewController()?.toggleSidebar()
+    }
+    
+    @IBAction func toggleOnTop(_ sender: NSMenuItem){
+        getMainViewController()?.toggleOnTop()
+    }
+    
+    @IBAction func showLogWindow(_ sender: NSMenuItem){
+        Logger.shared.showLogWindow()
+    }
+    
+    @IBAction func officialWebsite(_ sender: NSMenuItem){
+        if let url = URL(string: OFFICIAL_WEBSITE) {
+            NSWorkspace.shared.open(url)
+        }
+    }
+    
+    @IBAction func customLayoutStyle(_ sender: NSMenuItem){
+        getMainViewController()?.customLayoutStylePrompt()
+    }
+    
+    @IBAction func selectAll(_ sender: NSMenuItem){
+        // getMainViewController()?.collectionView.selectAll(nil)
+        NSApp.keyWindow?.firstResponder?.selectAll(nil)
+    }
+    
+    @IBAction func deselectAll(_ sender: NSMenuItem){
+        // 主要由按键监听处理
+        // Mainly handled by key listener
+        getMainViewController()?.collectionView.deselectAll(nil)
+    }
+    
+    @IBAction func showSearch(_ sender: NSMenuItem){
+        getMainViewController()?.toggleSearchOverlay()
+    }
+}
+

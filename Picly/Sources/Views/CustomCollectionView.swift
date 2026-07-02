@@ -1,0 +1,528 @@
+//
+//  CustomCollectionView.swift
+//  Picly
+//
+
+import Foundation
+import Cocoa
+
+class CustomCollectionView: NSCollectionView {
+
+    private var mouseDownLocation: NSPoint? = nil
+    private var thumbScrollBaseSize: Int = 0
+    private var thumbScrollTimer: Timer?
+    
+    private lazy var folderInfoLabel: NSTextField = {
+        let label = NSTextField(labelWithString: "")
+        label.font = NSFont.systemFont(ofSize: 16, weight: .regular)
+        label.textColor = NSColor.tertiaryLabelColor
+        label.alignment = .center
+        label.lineBreakMode = .byWordWrapping
+        label.maximumNumberOfLines = 0
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.isHidden = true
+        return label
+    }()
+    
+    private var folderInfoLabelConstraints: [NSLayoutConstraint] = []
+    
+    private func setupFolderInfoLabelIfNeeded() {
+        guard folderInfoLabel.superview == nil else { return }
+        guard let scrollView = enclosingScrollView,
+              let parentView = scrollView.superview else { return }
+        parentView.addSubview(folderInfoLabel)
+        folderInfoLabelConstraints = [
+            folderInfoLabel.centerXAnchor.constraint(equalTo: scrollView.centerXAnchor),
+            folderInfoLabel.centerYAnchor.constraint(equalTo: scrollView.centerYAnchor),
+            folderInfoLabel.widthAnchor.constraint(lessThanOrEqualTo: scrollView.widthAnchor, multiplier: 0.8)
+        ]
+        NSLayoutConstraint.activate(folderInfoLabelConstraints)
+    }
+    
+    func showFolderInfo(_ text: String) {
+        setupFolderInfoLabelIfNeeded()
+        folderInfoLabel.stringValue = text
+        folderInfoLabel.isHidden = false
+    }
+    
+    func hideFolderInfo() {
+        folderInfoLabel.isHidden = true
+    }
+    
+    override func becomeFirstResponder() -> Bool {
+        let result = super.becomeFirstResponder()
+        log("CustomCollectionView becomeFirstResponder")
+        
+        getViewController(self)?.publicVar.isCollectionViewFirstResponder = true
+        
+        let selectedIndexPaths = self.selectionIndexPaths
+        for indexPath in selectedIndexPaths{
+            if let item = self.item(at: indexPath) as? CustomCollectionViewItem{
+                item.selectedColor()
+            }
+        }
+        
+        return result
+    }
+    
+    override func resignFirstResponder() -> Bool {
+        let result = super.resignFirstResponder()
+        log("CustomCollectionView resignFirstResponder")
+        
+        getViewController(self)?.publicVar.isCollectionViewFirstResponder = false
+        
+        let selectedIndexPaths = self.selectionIndexPaths
+        for indexPath in selectedIndexPaths{
+            if let item = self.item(at: indexPath) as? CustomCollectionViewItem{
+                item.selectedColor()
+            }
+        }
+        
+        return result
+    }
+
+    override func keyDown(with event: NSEvent) {
+        // 不执行任何操作，从而忽略按键
+        // Do nothing to ignore key press
+        // super.keyDown(with: event)
+        return
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        guard isCommandKeyPressed() else {
+            if thumbScrollBaseSize != 0 { flushThumbScroll() }
+            super.scrollWheel(with: event); return
+        }
+        guard let vc = getViewController(self), !vc.publicVar.isInLargeView else {
+            super.scrollWheel(with: event); return
+        }
+
+        let delta = event.scrollingDeltaY
+        guard abs(delta) > 0.01 else { return }
+
+        if thumbScrollBaseSize == 0 {
+            thumbScrollBaseSize = vc.publicVar.profile.thumbSize
+            vc.collectionView.wantsLayer = true
+        }
+
+        var newSize = thumbScrollBaseSize + Int(delta * 3)
+        newSize = max(256, min(1200, newSize))
+        if newSize == vc.publicVar.profile.thumbSize { return }
+
+        vc.publicVar.profile.thumbSize = newSize
+
+        let scale = CGFloat(newSize) / CGFloat(thumbScrollBaseSize)
+        vc.collectionView.layer?.transform = CATransform3DMakeScale(scale, scale, 1)
+
+        thumbScrollTimer?.invalidate()
+        thumbScrollTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self] _ in
+            guard let self = self, let vc = getViewController(self) else { return }
+            self.flushThumbScroll()
+            vc.changeThumbSize(thumbSize: vc.publicVar.profile.thumbSize)
+        }
+    }
+
+    private func flushThumbScroll() {
+        thumbScrollTimer?.invalidate()
+        thumbScrollTimer = nil
+        thumbScrollBaseSize = 0
+        layer?.transform = CATransform3DIdentity
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        getViewController(self)?.publicVar.isColllectionViewItemRightClicked = false
+        self.window?.makeFirstResponder(self)
+        self.mouseDownLocation = event.locationInWindow
+        super.rightMouseDown(with: event)
+    }
+
+    override func rightMouseUp(with event: NSEvent) {
+        guard let viewController = getViewController(self) else { return }
+        let mouseUpLocation = event.locationInWindow
+        
+        if let mouseDownLocation = self.mouseDownLocation {
+            
+            if !viewController.publicVar.isColllectionViewItemRightClicked {
+                // 允许的最大移动距离
+                // Maximum allowed movement distance
+                let maxDistance: CGFloat = 5.0
+                let distance = hypot(mouseUpLocation.x - mouseDownLocation.x, mouseUpLocation.y - mouseDownLocation.y)
+                
+                // 鼠标移动距离在允许范围内，弹出菜单
+                // If mouse movement is within allowed range, show context menu
+                if distance <= maxDistance {
+                    
+                    deselectAll(nil)
+                    
+                    var canPasteOrMove=true
+                    let pasteboard = NSPasteboard.general
+                    let types = pasteboard.types ?? []
+                    if !types.contains(.fileURL) {
+                        canPasteOrMove=false
+                    }
+
+                    let curFolder = viewController.fileDB.curFolder
+                    let isVirtualFinderTagsFolder = curFolder.hasPrefix("file:///VirtualFinderTagsFolder")
+                    
+                    // 弹出菜单
+                    // Show context menu
+                    let menu = NSMenu(title: "Custom Menu")
+                    menu.autoenablesItems = false
+                    
+                    let actionItemOpenInFinder = menu.addItem(withTitle: NSLocalizedString("Open in Finder", comment: "在Finder中打开"), action: #selector(actOpenInFinder), keyEquivalent: "")
+                    actionItemOpenInFinder.isEnabled = !isVirtualFinderTagsFolder
+                    
+                    menu.addItem(NSMenuItem.separator())
+
+                    let actionItemPaste = menu.addItem(withTitle: NSLocalizedString("Paste", comment: "粘贴"), action: #selector(actPaste), keyEquivalent: "v")
+                    actionItemPaste.isEnabled = canPasteOrMove && !isVirtualFinderTagsFolder
+                    
+                    let actionItemMove = menu.addItem(withTitle: NSLocalizedString("Move Here", comment: "移动到此"), action: #selector(actMove), keyEquivalent: "v")
+                    actionItemMove.keyEquivalentModifierMask = [.command,.option]
+                    actionItemMove.isEnabled = canPasteOrMove && !isVirtualFinderTagsFolder
+
+                    menu.addItem(NSMenuItem.separator())
+
+                    buildFilterMenuItems(in: menu)
+
+                    menu.addItem(NSMenuItem.separator())
+                    
+                    // let actionItemCopyPath = menu.addItem(withTitle: NSLocalizedString("Copy Path", comment: "复制路径"), action: #selector(actCopyPath), keyEquivalent: "")
+                    
+                    let actionItemOpenInTerminal = menu.addItem(withTitle: NSLocalizedString("Open in Terminal", comment: "在终端中打开"), action: #selector(actOpenInTerminal), keyEquivalent: "")
+                    actionItemOpenInTerminal.isEnabled = !isVirtualFinderTagsFolder
+                    
+                    menu.addItem(NSMenuItem.separator())
+            
+                    // 创建"新建"子菜单
+                    // Create "New" submenu
+                    let newMenu = NSMenu()
+                    let newMenuItem = NSMenuItem(title: NSLocalizedString("New", comment: "新建"), action: nil, keyEquivalent: "")
+                    newMenuItem.submenu = newMenu
+                    newMenuItem.isEnabled = !isVirtualFinderTagsFolder
+                    
+                    // 添加新建文件夹选项
+                    // Add new folder option
+                    let newFolderItem = newMenu.addItem(withTitle: NSLocalizedString("Folder", comment: "文件夹"), 
+                                                       action: #selector(actNewFolder), 
+                                                       keyEquivalent: "n")
+                    newFolderItem.keyEquivalentModifierMask = [.command, .shift]
+
+                    newMenu.addItem(NSMenuItem.separator())
+                    
+                    // 添加新建文本文件选项
+                    // Add new text file option
+                    let newTextFileItem = newMenu.addItem(withTitle: NSLocalizedString("Text File", comment: "文本文件"), 
+                                                        action: #selector(actNewTextFile), 
+                                                        keyEquivalent: "")
+                    
+                    menu.addItem(newMenuItem)
+
+                    menu.addItem(NSMenuItem.separator())
+
+                    let actionItemRefresh = menu.addItem(withTitle: NSLocalizedString("Refresh", comment: "刷新"), action: #selector(actRefresh), keyEquivalent: "r")
+                    actionItemRefresh.keyEquivalentModifierMask = [.command]
+                    
+                    menu.items.forEach { $0.target = self }
+                    NSMenu.popUpContextMenu(menu, with: event, for: self)
+                }
+            }
+        }
+        // 重置按下位置
+        // Reset mouse down location
+        self.mouseDownLocation = nil
+        super.rightMouseUp(with: event)
+    }
+    
+    @objc func actOpenInFinder() {
+        if let folderURL=getViewController(self)?.fileDB.curFolder {
+            NSWorkspace.shared.open(URL(string: folderURL)!)
+        }
+    }
+    
+    @objc func actNewFolder() {
+        getViewController(self)?.handleNewFolder()
+    }
+    
+    @objc func actPaste() {
+        getViewController(self)?.handlePaste()
+    }
+    
+    @objc func actMove() {
+        getViewController(self)?.handleMove()
+    }
+    
+    @objc func actRefresh() {
+        getViewController(self)?.handleUserRefresh()
+    }
+
+    @objc func actCopyPath() {
+        guard let folderURL=getViewController(self)?.fileDB.curFolder else{return}
+        guard let url=URL(string: folderURL) else{return}
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(url.path, forType: .string)
+    }
+
+    @objc func actOpenInTerminal() {
+        guard let folderURL=getViewController(self)?.fileDB.curFolder else{return}
+        guard let url=URL(string: folderURL) else{return}
+        let task = Process()
+        task.launchPath = "/usr/bin/open"
+        task.arguments = ["-a", "Terminal", url.path]
+        task.launch()
+    }
+
+    // 添加新建文本文件的动作处理方法
+    // Add action handler method for new text file
+    @objc func actNewTextFile() {
+        getViewController(self)?.handleNewTextFile()
+    }
+
+    func buildFilterMenuItems(in menu: NSMenu) {
+        let viewController = getViewController(self)
+        
+        let filterMenu = NSMenu()
+        let filterMenuItem = NSMenuItem(title: NSLocalizedString("Filter by Finder Tag", comment: "按Finder标签筛选"), action: nil, keyEquivalent: "")
+        filterMenuItem.submenu = filterMenu
+        
+        let currentFilters = viewController?.publicVar.finderTagFilters ?? []
+        
+        for (_, tag) in FinderTag.all.enumerated() {
+            let item = filterMenu.addItem(withTitle: NSLocalizedString(tag.name, comment: ""), action: #selector(actFilterByFinderTag(_:)), keyEquivalent: "")
+            item.target = self
+            item.keyEquivalentModifierMask = [.command, .shift]
+            item.representedObject = tag.name
+            if currentFilters.contains(tag.name) {
+                item.state = .on
+            }
+            item.image = tag.dotImage
+        }
+        
+        filterMenu.addItem(NSMenuItem.separator())
+        
+        let isAndMode = viewController?.publicVar.isFinderTagFilterModeAnd ?? false
+        let matchAnyItem = filterMenu.addItem(withTitle: NSLocalizedString("Match Any (OR)", comment: "匹配任一 (OR)"), action: #selector(actSetFinderTagFilterModeOr), keyEquivalent: "")
+        matchAnyItem.target = self
+        matchAnyItem.state = isAndMode ? .off : .on
+        let matchAllItem = filterMenu.addItem(withTitle: NSLocalizedString("Match All (AND)", comment: "匹配全部 (AND)"), action: #selector(actSetFinderTagFilterModeAnd), keyEquivalent: "")
+        matchAllItem.target = self
+        matchAllItem.state = isAndMode ? .on : .off
+        
+        filterMenu.addItem(NSMenuItem.separator())
+        
+        let reverseFilterItem = filterMenu.addItem(withTitle: NSLocalizedString("Reverse Filter", comment: "反转筛选"), action: #selector(actReverseFinderTagFilter), keyEquivalent: "")
+        reverseFilterItem.target = self
+        reverseFilterItem.state = viewController?.publicVar.isFinderTagFilterReversed ?? false ? .on : .off
+        
+        filterMenu.addItem(NSMenuItem.separator())
+        
+        let showAllItem = filterMenu.addItem(withTitle: NSLocalizedString("Show All", comment: "显示全部"), action: #selector(actClearFinderTagFilter), keyEquivalent: "")
+        showAllItem.target = self
+        if currentFilters.isEmpty {
+            showAllItem.state = .on
+        }
+        
+        filterMenu.addItem(NSMenuItem.separator())
+        let learnMoreItem = filterMenu.addItem(withTitle: NSLocalizedString("Learn More...", comment: "了解更多..."), action: #selector(actTagLearnMore), keyEquivalent: "")
+        learnMoreItem.target = self
+        
+        menu.addItem(filterMenuItem)
+        
+        let ratingMenu = NSMenu()
+        let ratingMenuItem = NSMenuItem(title: NSLocalizedString("Filter by Rating", comment: "按评级筛选"), action: nil, keyEquivalent: "")
+        ratingMenuItem.submenu = ratingMenu
+        
+        let currentRatingFilters = viewController?.publicVar.ratingFilters ?? []
+        
+        for rating in (1...5).reversed() {
+            let stars = String(repeating: "★", count: rating) + String(repeating: "☆", count: 5 - rating)
+            let title = "\(stars)  (\(rating))"
+            let item = ratingMenu.addItem(withTitle: title, action: #selector(actFilterByRating(_:)), keyEquivalent: "")
+            item.target = self
+            item.keyEquivalentModifierMask = [.control, .shift]
+            item.representedObject = rating
+            if currentRatingFilters.contains(rating) {
+                item.state = .on
+            }
+        }
+        
+        let noRatingItem = ratingMenu.addItem(withTitle: NSLocalizedString("No Rating", comment: "无评级"), action: #selector(actFilterByRating(_:)), keyEquivalent: "")
+        noRatingItem.target = self
+        noRatingItem.keyEquivalentModifierMask = [.control, .shift]
+        noRatingItem.representedObject = 0
+        if currentRatingFilters.contains(0) {
+            noRatingItem.state = .on
+        }
+        
+        ratingMenu.addItem(NSMenuItem.separator())
+        
+        let reverseRatingFilterItem = ratingMenu.addItem(withTitle: NSLocalizedString("Reverse Filter", comment: "反转筛选"), action: #selector(actReverseRatingFilter), keyEquivalent: "")
+        reverseRatingFilterItem.target = self
+        reverseRatingFilterItem.state = viewController?.publicVar.isRatingFilterReversed ?? false ? .on : .off
+        
+        ratingMenu.addItem(NSMenuItem.separator())
+        
+        let showAllRatingItem = ratingMenu.addItem(withTitle: NSLocalizedString("Show All", comment: "显示全部"), action: #selector(actClearRatingFilter), keyEquivalent: "")
+        showAllRatingItem.target = self
+        if currentRatingFilters.isEmpty {
+            showAllRatingItem.state = .on
+        }
+        
+        ratingMenu.addItem(NSMenuItem.separator())
+        let readmeItem = ratingMenu.addItem(withTitle: NSLocalizedString("Readme...", comment: "说明..."), action: #selector(actRatingReadme), keyEquivalent: "")
+        readmeItem.target = self
+        
+        menu.addItem(ratingMenuItem)
+    }
+    
+    @objc func actFilterByFinderTag(_ sender: NSMenuItem) {
+        guard let tagName = sender.representedObject as? String else { return }
+        getViewController(self)?.toggleFinderTagFilter(tagName)
+    }
+
+    @objc func actClearFinderTagFilter() {
+        getViewController(self)?.handleClearFinderTagFilter()
+    }
+
+    @objc func actReverseFinderTagFilter() {
+        getViewController(self)?.toggleFinderTagFilterReversed()
+    }
+
+    @objc func actSetFinderTagFilterModeAnd() {
+        getViewController(self)?.publicVar.isFinderTagFilterModeAnd = true
+        getViewController(self)?.refreshCollectionView(needLoadThumbPriority: true)
+    }
+
+    @objc func actSetFinderTagFilterModeOr() {
+        getViewController(self)?.publicVar.isFinderTagFilterModeAnd = false
+        getViewController(self)?.refreshCollectionView(needLoadThumbPriority: true)
+    }
+
+    @objc func actTagLearnMore() {
+        getViewController(self)?.handleTagLearnMore()
+    }
+
+    @objc func actFilterByRating(_ sender: NSMenuItem) {
+        guard let rating = sender.representedObject as? Int else { return }
+        getViewController(self)?.toggleRatingFilter(rating)
+    }
+
+    @objc func actClearRatingFilter() {
+        getViewController(self)?.handleClearRatingFilter()
+    }
+
+    @objc func actReverseRatingFilter() {
+        getViewController(self)?.toggleRatingFilterReversed()
+    }
+
+    @objc func actRatingReadme() {
+        showInformationLong(title: NSLocalizedString("Info", comment: "说明"), message: NSLocalizedString("rating-info", comment: "对于评级的说明..."))
+    }
+}
+
+extension NSMenu {
+    func addTaggingMenuItems(
+        activeTagNames: Set<String>,
+        target: AnyObject,
+        showScanEnhancedIndex: Bool = false,
+        isRatingEnabled: Bool = true,
+        isEnabled: Bool = true,
+        toggleTagHandler: @escaping (String) -> Void
+    ) {
+        let allTags = FinderTag.all
+
+        let finderTagMenu = NSMenu()
+        let finderTagTitle = NSLocalizedString("Finder Tags", comment: "Finder标签")
+        let finderTagMenuItem = NSMenuItem(title: finderTagTitle, action: nil, keyEquivalent: "")
+        finderTagMenuItem.submenu = finderTagMenu
+        finderTagMenuItem.isEnabled = isEnabled
+
+        for (i, tag) in allTags.enumerated() {
+            let item = finderTagMenu.addItem(withTitle: NSLocalizedString(tag.name, comment: ""), action: NSSelectorFromString("actToggleFinderTag:"), keyEquivalent: (i + 1 <= 9) ? "\(i + 1)" : "")
+            item.target = target
+            item.keyEquivalentModifierMask = [.command]
+            item.representedObject = tag.name
+            if activeTagNames.contains(tag.name) {
+                item.state = .on
+            }
+            item.image = tag.dotImage
+        }
+
+        finderTagMenu.addItem(NSMenuItem.separator())
+        let removeAllItem = finderTagMenu.addItem(withTitle: NSLocalizedString("Remove All Tags", comment: "移除所有标签"), action: NSSelectorFromString("actRemoveAllFinderTags"), keyEquivalent: "")
+        removeAllItem.target = target
+
+        if showScanEnhancedIndex {
+            finderTagMenu.addItem(NSMenuItem.separator())
+            let scanItem = finderTagMenu.addItem(withTitle: NSLocalizedString("Scan & Update Enhanced Index", comment: "扫描并更新增强索引"), action: NSSelectorFromString("actScanEnhancedIndex"), keyEquivalent: "")
+            scanItem.target = target
+        }
+
+        finderTagMenu.addItem(NSMenuItem.separator())
+        let learnMoreItem = finderTagMenu.addItem(withTitle: NSLocalizedString("Learn More...", comment: "了解更多..."), action: NSSelectorFromString("actTagLearnMore"), keyEquivalent: "")
+        learnMoreItem.target = target
+
+        let colorTags = allTags
+        if isEnabled && !colorTags.isEmpty {
+            let dotsItem = NSMenuItem()
+            let dotsView = FinderTagDotsView(tags: colorTags, activeTags: activeTagNames) { [weak self] tagName in
+                toggleTagHandler(tagName)
+                self?.cancelTracking()
+            }
+            dotsView.onHoverChanged = { [weak finderTagMenuItem] index in
+                guard let finderTagMenuItem = finderTagMenuItem else { return }
+                if index >= 0 && index < colorTags.count {
+                    let tag = colorTags[index]
+                    if activeTagNames.contains(tag.name) {
+                        finderTagMenuItem.title = NSLocalizedString("Remove", comment: "移除") + "\"\(tag.name)\""
+                    } else {
+                        finderTagMenuItem.title = NSLocalizedString("Add", comment: "添加") + "\"\(tag.name)\""
+                    }
+                    let attrTitle = NSAttributedString(
+                        string: finderTagMenuItem.title,
+                        attributes: [.foregroundColor: NSColor.secondaryLabelColor]
+                    )
+                    finderTagMenuItem.attributedTitle = attrTitle
+                } else {
+                    finderTagMenuItem.attributedTitle = nil
+                    finderTagMenuItem.title = finderTagTitle
+                }
+            }
+            dotsItem.view = dotsView
+            self.addItem(dotsItem)
+        }
+
+        self.addItem(finderTagMenuItem)
+
+        let rateSubMenu = NSMenu(title: NSLocalizedString("Rating", comment: "评级"))
+        let rateMenuItem = NSMenuItem(title: NSLocalizedString("Rating", comment: "评级"), action: nil, keyEquivalent: "")
+        rateMenuItem.submenu = rateSubMenu
+        rateMenuItem.isEnabled = isEnabled && isRatingEnabled
+
+        for rating in (1...5).reversed() {
+            let stars = String(repeating: "★", count: rating) + String(repeating: "☆", count: 5 - rating)
+            let title = "\(stars)  (\(rating))"
+            let item = NSMenuItem(title: title, action: NSSelectorFromString("actRate:"), keyEquivalent: "\(rating)")
+            item.keyEquivalentModifierMask = [.control]
+            item.tag = rating
+            item.target = target
+            rateSubMenu.addItem(item)
+        }
+
+        let clearTitle = NSLocalizedString("No Rating", comment: "无评级")
+        let clearItem = NSMenuItem(title: clearTitle, action: NSSelectorFromString("actRate:"), keyEquivalent: "0")
+        clearItem.keyEquivalentModifierMask = [.control]
+        clearItem.tag = 0
+        clearItem.target = target
+        rateSubMenu.addItem(clearItem)
+
+        rateSubMenu.addItem(NSMenuItem.separator())
+
+        let rateReadmeItem = NSMenuItem(title: NSLocalizedString("Readme...", comment: "说明..."), action: NSSelectorFromString("actRateReadmeAction"), keyEquivalent: "")
+        rateReadmeItem.target = target
+        rateSubMenu.addItem(rateReadmeItem)
+
+        self.addItem(rateMenuItem)
+    }
+}
