@@ -39,6 +39,8 @@
 		F74D55562F0E487C00C9AB85 /* RightMouseGesture.swift in Sources */ = {isa = PBXBuildFile; fileRef = F74D55552F0E487800C9AB85 /* RightMouseGesture.swift */; };
 		F74D55582F0E493700C9AB85 /* LayoutProfileConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = F74D55572F0E491D00C9AB85 /* LayoutProfileConfig.swift */; };
 		F74D555A2F0E49AB00C9AB85 /* AutoScrollPlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = F74D55592F0E49A400C9AB85 /* AutoScrollPlay.swift */; };
+		F7FED5F42F7F261900E35164 /* ReverseImageSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7FED5F32F7F261900E35164 /* ReverseImageSearch.swift */; };
+		C7FF86DE2D7F261900C9AB85 /* DirectoryWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7FF86DF2D7F261900C9AB85 /* DirectoryWatcher.swift */; };
 		F74D555C2F0E501200C9AB85 /* EventHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F74D555B2F0E500C00C9AB85 /* EventHandler.swift */; };
 		F74D555E2F0E52F800C9AB85 /* ArrowKeyLocate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F74D555D2F0E52EA00C9AB85 /* ArrowKeyLocate.swift */; };
 		F7663C162F222AAC0028DF35 /* ImageEditingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7663C152F222AAC0028DF35 /* ImageEditingView.swift */; };
@@ -157,6 +159,8 @@
 		F74D554D2F0E459600C9AB85 /* WindowManagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowManagement.swift; sourceTree = "<group>"; };
 		F74D554F2F0E467400C9AB85 /* DirTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirTree.swift; sourceTree = "<group>"; };
 		F74D55512F0E46D100C9AB85 /* Search.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Search.swift; sourceTree = "<group>"; };
+		F7FED5F32F7F261900E35164 /* ReverseImageSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReverseImageSearch.swift; sourceTree = "<group>"; };
+		C7FF86DF2D7F261900C9AB85 /* DirectoryWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryWatcher.swift; sourceTree = "<group>"; };
 		F74D55532F0E47D400C9AB85 /* MemoryManagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryManagement.swift; sourceTree = "<group>"; };
 		F74D55552F0E487800C9AB85 /* RightMouseGesture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RightMouseGesture.swift; sourceTree = "<group>"; };
 		F74D55572F0E491D00C9AB85 /* LayoutProfileConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutProfileConfig.swift; sourceTree = "<group>"; };
@@ -249,6 +253,7 @@
 				F73865E32C37C11B00837FE4 /* ImageProcess.swift */,
 				F76E2EFD2C3B765C0031B0B4 /* Log.swift */,
 				F73865DA2C37BC1500837FE4 /* RefCode.swift */,
+				C7FF86DF2D7F261900C9AB85 /* DirectoryWatcher.swift */,
 				F7AAA8BC2D9BD1ED007CE330 /* VideoProcess.swift */,
 			);
 			path = Common;
@@ -340,6 +345,7 @@
 				F76F6A642F5B15B200D798DC /* ProgressBar.swift */,
 				F74D55552F0E487800C9AB85 /* RightMouseGesture.swift */,
 				F74D55512F0E46D100C9AB85 /* Search.swift */,
+				F7FED5F32F7F261900E35164 /* ReverseImageSearch.swift */,
 				F7FED5F22F7D0B0E00E35164 /* Tagging.swift */,
 				F74D554D2F0E459600C9AB85 /* WindowManagement.swift */,
 			);
@@ -518,6 +524,8 @@
 				F7AA00012F9E000000AA0001 /* VideoPlayerControlsView.swift in Sources */,
 				F74D555C2F0E501200C9AB85 /* EventHandler.swift in Sources */,
 				F74D55522F0E46D200C9AB85 /* Search.swift in Sources */,
+				F7FED5F42F7F261900E35164 /* ReverseImageSearch.swift in Sources */,
+				C7FF86DE2D7F261900C9AB85 /* DirectoryWatcher.swift in Sources */,
 				F7FED5F32F7D0B1100E35164 /* Tagging.swift in Sources */,
 				F74D55542F0E47D700C9AB85 /* MemoryManagement.swift in Sources */,
 				F76F6A652F5B15B700D798DC /* ProgressBar.swift in Sources */,
