@@ -317,8 +317,10 @@ extension NSToolbarItem.Identifier {
     static let isSearchFilterOn = NSToolbarItem.Identifier("com.example.isSearchFilterOn")
     static let isTagFilterOn = NSToolbarItem.Identifier("com.example.isTagFilterOn")
     static let isRatingFilterOn = NSToolbarItem.Identifier("com.example.isRatingFilterOn")
+    static let isColorFilterOn = NSToolbarItem.Identifier("com.example.isColorFilterOn")
     static let isAutoPlayVisibleVideo = NSToolbarItem.Identifier("com.example.isAutoPlayVisibleVideo")
     static let isEnableHDR = NSToolbarItem.Identifier("com.example.isEnableHDR")
+    static let reverseImageSearch = NSToolbarItem.Identifier("com.example.reverseImageSearch")
 }
 
 extension WindowController: NSToolbarDelegate {
@@ -382,6 +384,9 @@ extension WindowController: NSToolbarDelegate {
                     identifiers.append(.isRecursiveMode)
                 }
                 identifiers.append(.tagging)
+                if globalVar.imageAIEnabled {
+                    identifiers.append(.reverseImageSearch)
+                }
                 identifiers.append(.viewToggle)
                 identifiers.append(.thumbSize)
                 identifiers.append(.sort)
@@ -687,7 +692,22 @@ extension WindowController: NSToolbarDelegate {
             toolbarItem.label = NSLocalizedString("Tagging", comment: "标签")
             toolbarItem.paletteLabel = NSLocalizedString("Tagging", comment: "标签")
             toolbarItem.visibilityPriority = .low
-            
+
+        case .reverseImageSearch:
+            let image = NSImage(systemSymbolName: "photo.badge.magnifyingglass", accessibilityDescription: nil)
+                ?? NSImage(systemSymbolName: "photo.on.magnifyingglass", accessibilityDescription: nil)
+                ?? NSImage(systemSymbolName: "magnifyingglass.circle", accessibilityDescription: nil)
+                ?? NSImage()
+            let button = NSButton(title: "", image: image, target: self, action: #selector(reverseImageSearchAction(_:)))
+            setButtonStyle(button)
+            button.setButtonType(.momentaryPushIn)
+            button.contentTintColor = nil
+            button.toolTip = NSLocalizedString("Search by Image", comment: "以图搜图")
+            toolbarItem.view = button
+            toolbarItem.label = NSLocalizedString("Search by Image", comment: "以图搜图")
+            toolbarItem.paletteLabel = NSLocalizedString("Search by Image", comment: "以图搜图")
+            toolbarItem.visibilityPriority = .low
+
         case .viewToggle:
             let segmentedControl = NSSegmentedControl(images: [
                 // NSImage(systemSymbolName: "rectangle.grid.1x2", accessibilityDescription: "Justified")!,
@@ -2051,5 +2071,32 @@ extension WindowController: NSToolbarDelegate {
     @objc func toggleLargeImageViewShowTagsAndRating(_ sender: NSMenuItem){
         guard let viewController = contentViewController as? ViewController else {return}
         viewController.toggleLargeImageViewShowTagsAndRating()
+    }
+
+    @objc func reverseImageSearchAction(_ sender: Any?) {
+        guard let viewController = contentViewController as? ViewController else { return }
+
+        if viewController.reverseImageSearchOverlay != nil {
+            viewController.closeReverseImageSearchOverlay()
+            return
+        }
+
+        if viewController.publicVar.isAIFilterOn {
+            viewController.publicVar.isAIFilterOn = false
+            viewController.publicVar.aiFilterPaths = []
+            viewController.applyAIFilter()
+            viewController.publicVar.updateToolbar()
+        }
+
+        if viewController.publicVar.isInLargeView,
+           let filePath = URL(string: viewController.largeImageView.file.path),
+           globalVar.HandledImageExtensions.contains(filePath.pathExtension.lowercased()) {
+            viewController.startReverseImageSearch(with: filePath.path)
+        } else if let url = viewController.publicVar.selectedUrls().first,
+                  globalVar.HandledImageExtensions.contains(url.pathExtension.lowercased()) {
+            viewController.startReverseImageSearch(with: url.path)
+        } else {
+            viewController.showReverseImageSearchOverlay()
+        }
     }
 }

@@ -377,6 +377,14 @@ extension ViewController {
             }
         }
 
+        // 颜色搜索过滤
+        // Color search filter
+        if publicVar.isColorFilterOn && !publicVar.colorFilterPaths.isEmpty {
+            contents = contents.filter { url in
+                publicVar.colorFilterPaths.contains(url.absoluteString)
+            }
+        }
+
         // 过滤标签
         // Filter tags
         if !publicVar.finderTagFilters.isEmpty {
@@ -507,7 +515,7 @@ extension ViewController {
         if !skip {
             // 文件过滤
             // File filtering
-            fileDB.db[SortKeyDir(folderURL.absoluteString)]!.isFiltered = publicVar.isFilenameFilterOn
+            fileDB.db[SortKeyDir(folderURL.absoluteString)]!.isFiltered = publicVar.isFilenameFilterOn || publicVar.isColorFilterOn || publicVar.isAIFilterOn || publicVar.isGeoFilterOn
             fileDB.db[SortKeyDir(folderURL.absoluteString)]!.folderCount=subFolders.count
             fileDB.db[SortKeyDir(folderURL.absoluteString)]!.fileCount=fileCount
             fileDB.db[SortKeyDir(folderURL.absoluteString)]!.imageCount=imageCount
@@ -778,6 +786,11 @@ extension ViewController {
             if publicVar.isAIFilterOn && !publicVar.aiFilterPaths.isEmpty {
                 let aiSet = Set(publicVar.aiFilterPaths)
                 fileDB.db[SortKeyDir(folderpath)]!.aiOrderedPaths = filesInFolder.filter { aiSet.contains($0) }
+            }
+            // 保存颜色搜索结果用于展示
+            if publicVar.isColorFilterOn && !publicVar.colorFilterPaths.isEmpty {
+                let colorSet = Set(publicVar.colorFilterPaths)
+                fileDB.db[SortKeyDir(folderpath)]!.aiOrderedPaths = filesInFolder.filter { colorSet.contains($0) }
             }
         }
         
@@ -1318,7 +1331,13 @@ extension ViewController {
             // Reset search filter
             if !globalVar.keepFilterStateWhenSwitchFolder{
                 publicVar.isFilenameFilterOn = false
-                
+                publicVar.isColorFilterOn = false
+                publicVar.colorFilterPaths = []
+                publicVar.isAIFilterOn = false
+                publicVar.aiFilterPaths = []
+                publicVar.isGeoFilterOn = false
+                publicVar.geoFilterPaths = []
+                searchColorPickedColors.removeAll()
             }
             // 重置Finder标签过滤
             // Reset Finder tag filter

@@ -246,6 +246,10 @@ class PublicVar{
     var geoFilterPaths: [String] = []
     var isGeolocationSearchMode = false
 
+    // 颜色搜索
+    var isColorFilterOn = false
+    var colorFilterPaths: [String] = []
+
     var HandledImageAndRawExtensions: [String] = []
     var HandledVideoExtensions: [String] = []
     var HandledOtherExtensions: [String] = []
@@ -428,6 +432,11 @@ class ViewController: NSViewController, NSSplitViewDelegate, NSSearchFieldDelega
     var searchAILabel: NSTextField?
     var searchGeoModeButton: NSButton?
     var searchGeoLabel: NSTextField?
+
+    // 颜色搜索
+    var search_isColorMode: Bool = false
+    var searchColorModeButton: NSButton?
+    var searchColorPickedColors: [(r: Double, g: Double, b: Double)] = []
     
     var dirURLCache: [URL] = []
     var dirURLCacheParameters: Any = []
@@ -479,6 +488,16 @@ class ViewController: NSViewController, NSSplitViewDelegate, NSSearchFieldDelega
     var quickSearchTimer: Timer?
     var quickSearchText: String = ""
     var quickSearchState: Bool = false
+
+    // 以图搜图
+    // Reverse image search
+    var reverseImageSearchOverlay: NSView?
+    var reverseImageDropZone: ReverseImageDropView?
+    var reverseImageDropIcon: NSImageView?
+    var reverseImagePreview: NSImageView?
+    var reverseImageStatusLabel: NSTextField?
+    var reverseImageSearchTask: Task<Void, Never>?
+    var reverseImageChooseButton: NSButton?
     
     override func viewDidLoad() {
         super.viewDidLoad()

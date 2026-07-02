@@ -516,6 +516,19 @@ extension ViewController {
                     coreAreaView.showInfo(NSLocalizedString("AI filter cleared", comment: "AI过滤已清除"), timeOut: 1.5)
                     return nil
                 }
+                if publicVar.isColorFilterOn && !publicVar.colorFilterPaths.isEmpty && searchOverlay == nil {
+                    publicVar.isColorFilterOn = false
+                    publicVar.colorFilterPaths = []
+                    publicVar.isFilenameFilterOn = false
+                    dirURLCache.removeAll()
+                    if let folderURL = URL(string: fileDB.curFolder) {
+                        DirMetadataCache.shared.removeCache(for: folderURL)
+                    }
+                    refreshCollectionView(needLoadThumbPriority: true)
+                    publicVar.updateToolbar()
+                    coreAreaView.showInfo(NSLocalizedString("Color filter cleared", comment: "颜色过滤已清除"), timeOut: 1.5)
+                    return nil
+                }
                 if publicVar.isCollectionViewFirstResponder{
                     collectionView.deselectAll(nil)
                 }

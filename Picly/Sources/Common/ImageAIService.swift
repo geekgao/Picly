@@ -24,6 +24,25 @@ actor ImageAIService {
         process?.isRunning ?? false
     }
 
+    private func watchedDirectories() -> [String] {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return [
+            "\(home)/Pictures",
+            "\(home)/Downloads",
+            "\(home)/Desktop",
+            "\(home)/Documents"
+        ].filter { FileManager.default.fileExists(atPath: $0) }
+    }
+
+    func startWatching() {
+        guard globalVar.imageAIEnabled else { return }
+        Task { await DirectoryWatcher.shared.start(watching: watchedDirectories()) }
+    }
+
+    func stopWatching() {
+        Task { await DirectoryWatcher.shared.stop() }
+    }
+
     func startIfEnabled() {
         guard globalVar.imageAIEnabled else { return }
         start()
@@ -36,6 +55,7 @@ actor ImageAIService {
         process?.terminate()
         process = nil
         monitorTask?.cancel()
+        startWatching()
 
         let dataDir: String = {
             let home = FileManager.default.homeDirectoryForCurrentUser.path
@@ -90,6 +110,7 @@ actor ImageAIService {
     }
 
     func stop() {
+        stopWatching()
         monitorTask?.cancel()
         process?.terminationHandler = nil
         process?.terminate()
@@ -141,7 +162,7 @@ actor ImageAIService {
 
     // MARK: - API calls
 
-    func search(query: String, topK: Int = 200, minScore: Float = 0.0, filter: SearchFilter? = nil) async throws -> [SearchResultItem] {
+    func search(query: String, topK: Int = 200, minScore: Float = 0.06, filter: SearchFilter? = nil) async throws -> [SearchResultItem] {
         try await ensureRunning()
         let url = baseURL.appendingPathComponent("search")
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
@@ -210,6 +231,84 @@ actor ImageAIService {
             throw ImageAIError.httpError((response as? HTTPURLResponse)?.statusCode ?? -1, body: body)
         }
         return try JSONDecoder().decode(StatusResponse.self, from: data)
+    }
+
+    func searchByImage(path: String, topK: Int = 200, minScore: Float = 0.35, filter: SearchFilter? = nil) async throws -> [SearchResultItem] {
+        try await ensureRunning()
+        let url = baseURL.appendingPathComponent("search-by-image")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body: [String: Any] = [
+            "path": path,
+            "topK": topK
+        ]
+        if minScore > 0 {
+            body["minScore"] = minScore
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw ImageAIError.httpError(code, body: body)
+        }
+        let searchResponse = try JSONDecoder().decode(SearchResponse.self, from: data)
+        return searchResponse.results
+    }
+
+    func indexFile(path: String) async throws {
+        try await ensureRunning()
+        let url = baseURL.appendingPathComponent("index-file")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body = ["path": path]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw ImageAIError.httpError(code, body: body)
+        }
+    }
+
+    func searchByColor(colors: [(r: Double, g: Double, b: Double)], tolerance: Double = 0.15, topK: Int = 200) async throws -> [SearchResultItem] {
+        try await ensureRunning()
+        let url = baseURL.appendingPathComponent("search-by-color")
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+        let colorsStr = colors.map { String(format: "%.3f,%.3f,%.3f", $0.r, $0.g, $0.b) }.joined(separator: "|")
+        components.queryItems = [
+            URLQueryItem(name: "colors", value: colorsStr),
+            URLQueryItem(name: "tolerance", value: "\(tolerance)"),
+            URLQueryItem(name: "topK", value: "\(topK)")
+        ]
+        var request = URLRequest(url: components.url!)
+        request.timeoutInterval = 120
+
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw ImageAIError.httpError(code, body: body)
+        }
+        let searchResponse = try JSONDecoder().decode(SearchResponse.self, from: data)
+        return searchResponse.results
+    }
+
+    func deleteImage(path: String) async throws {
+        try await ensureRunning()
+        guard let encoded = path.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return }
+        let url = baseURL.appendingPathComponent("images?path=\(encoded)")
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw ImageAIError.httpError(code, body: body)
+        }
     }
 
     func preload() async throws {

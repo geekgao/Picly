@@ -45,7 +45,7 @@ extension ViewController {
             let filterButtonWidth = 25 + filterButtonTitle.size(withAttributes: [.font: filterButtonFont]).width.rounded()
             let btnSize = CGSize(width: 34, height: 28)
             let checkboxH: CGFloat = 22
-            let rightButtonsTotalWidth: CGFloat = filterButtonWidth + btnSize.width * 2 + 5 + 5 + 5  // filter + geo + ai + spacing
+            let rightButtonsTotalWidth: CGFloat = filterButtonWidth + btnSize.width * 3 + 5 + 5 + 5 + 5  // filter + color + geo + ai + spacing
             var bottomRowLeftWidth: CGFloat = 0
             bottomRowLeftWidth += publicVar.isRecursiveMode ? fullPathCheckboxWidth + 5 : 0
             let containerWidth = 12 + max(bottomRowLeftWidth, 220 + rightButtonsTotalWidth)
@@ -119,7 +119,16 @@ extension ViewController {
             geoButton.action = #selector(geoSearchButtonClicked(_:))
             searchGeoModeButton = geoButton
 
-            // 创建使用完整路径复选框 - 放在下面一行
+            // 创建颜色搜索模式切换按钮
+            // Create color search mode toggle button
+            let colorButton = NSButton()
+            colorButton.bezelStyle = .rounded
+            colorButton.isBordered = true
+            colorButton.image = NSImage(systemSymbolName: "paintpalette.fill", accessibilityDescription: "Color Search")
+            colorButton.imagePosition = .imageOnly
+            colorButton.target = self
+            colorButton.action = #selector(colorSearchButtonClicked(_:))
+            searchColorModeButton = colorButton
             // Create use full path checkbox - place on bottom row
             let fullPathCheckbox = NSButton(checkboxWithTitle: fullPathCheckboxTitle, target: self, action: #selector(fullPathCheckboxChanged(_:)))
             fullPathCheckbox.frame = NSRect(x: 6, y: bottomRowY, width: fullPathCheckboxWidth, height: checkboxH)
@@ -147,12 +156,17 @@ extension ViewController {
             let geoButtonX = aiButtonX - 5 - btnSize.width
             geoButton.frame = NSRect(x: geoButtonX, y: bottomRowY, width: btnSize.width, height: btnSize.height)
 
+            // 创建颜色搜索按钮 - 放在地理搜索按钮左边
+            let colorButtonX = geoButtonX - 5 - btnSize.width
+            colorButton.frame = NSRect(x: colorButtonX, y: bottomRowY, width: btnSize.width, height: btnSize.height)
+
             // 添加所有控件到容器视图
             // Add all controls to container view
             containerView.addSubview(searchField!)
             if publicVar.isRecursiveMode {
                 containerView.addSubview(fullPathCheckbox)
             }
+            containerView.addSubview(colorButton)
             containerView.addSubview(geoButton)
             containerView.addSubview(aiButton)
             containerView.addSubview(filterButton)
@@ -201,8 +215,13 @@ extension ViewController {
         if publicVar.isGeoFilterOn && !search_isGeoMode {
             search_isGeoMode = true
         }
+        // 恢复颜色搜索模式
+        if publicVar.isColorFilterOn && !search_isColorMode {
+            search_isColorMode = true
+        }
         updateAIModeUI()
         updateGeoModeUI()
+        updateColorModeUI()
         
         publicVar.isKeyEventEnabled = false
         publicVar.isInSearchState = true
@@ -221,6 +240,12 @@ extension ViewController {
         search_geocoder = nil
         search_isAIMode = false
         search_isGeoMode = false
+        search_isColorMode = false
+        publicVar.isColorFilterOn = false
+        publicVar.colorFilterPaths = []
+        searchColorPickedColors.removeAll()
+        NotificationCenter.default.removeObserver(self, name: NSWindow.willCloseNotification, object: NSColorPanel.shared)
+        NSColorPanel.shared.orderOut(nil)
         publicVar.isGeolocationSearchMode = false
         if searchOverlay != nil {
             searchOverlay?.removeFromSuperview()
@@ -232,6 +257,7 @@ extension ViewController {
             searchAILabel = nil
             searchGeoModeButton = nil
             searchGeoLabel = nil
+            searchColorModeButton = nil
             view.window?.makeFirstResponder(collectionView)
         }
     }
@@ -243,13 +269,15 @@ extension ViewController {
         aiBtn.contentTintColor = isAI ? NSColor.controlAccentColor : NSColor.secondaryLabelColor
         aiBtn.bezelColor = isAI ? NSColor.controlAccentColor.withAlphaComponent(0.2) : nil
         
-        searchFullPathCheckbox?.isHidden = isAI || search_isGeoMode
-        searchFilterButton?.isEnabled = (isAI || search_isGeoMode) ? false : !search_searchText.isEmpty
+        searchFullPathCheckbox?.isHidden = isAI || search_isGeoMode || search_isColorMode
+        searchFilterButton?.isEnabled = (isAI || search_isGeoMode || search_isColorMode) ? false : !search_searchText.isEmpty
         searchAILabel?.isHidden = !isAI || !publicVar.aiIsSearching
         if isAI {
             searchField?.placeholderString = NSLocalizedString("AI Search...", comment: "AI搜索...")
         } else if search_isGeoMode {
             searchField?.placeholderString = NSLocalizedString("Location Search...", comment: "地理位置搜索...")
+        } else if search_isColorMode {
+            searchField?.placeholderString = NSLocalizedString("Color code e.g. #FF0000 or 255,0,0", comment: "颜色代码输入提示")
         } else {
             searchField?.placeholderString = NSLocalizedString("Search...", comment: "搜索...")
         }
@@ -265,9 +293,261 @@ extension ViewController {
         updateAIModeUI()
     }
 
+    /// Parse a color code string to (r, g, b) in 0-1 range.
+    /// Supports: #RRGGBB, #RGB, R,G,B, R G B (0-255 or 0.0-1.0).
+    private func parseColorCode(_ text: String) -> (r: Double, g: Double, b: Double)? {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+
+        // #RRGGBB or #RGB
+        if trimmed.hasPrefix("#") {
+            let hex = String(trimmed.dropFirst())
+            if hex.count == 6 {
+                if let val = Int(hex, radix: 16) {
+                    return (Double((val >> 16) & 0xFF) / 255.0,
+                            Double((val >> 8) & 0xFF) / 255.0,
+                            Double(val & 0xFF) / 255.0)
+                }
+            }
+            if hex.count == 3 {
+                if let val = Int(hex, radix: 16) {
+                    let r = Double((val >> 8) & 0xF) / 15.0
+                    let g = Double((val >> 4) & 0xF) / 15.0
+                    let b = Double(val & 0xF) / 15.0
+                    return (r, g, b)
+                }
+            }
+            return nil
+        }
+
+        // R,G,B or R G B — comma or space separated
+        let parts = trimmed.components(separatedBy: CharacterSet(charactersIn: ", "))
+            .filter { !$0.isEmpty }
+        guard parts.count == 3 else { return nil }
+
+        let values = parts.compactMap { Double($0) }
+        guard values.count == 3 else { return nil }
+
+        // Detect whether values are in 0-255 or 0.0-1.0 range
+        if values.allSatisfy({ $0 > 1.0 }) {
+            return (values[0] / 255.0, values[1] / 255.0, values[2] / 255.0)
+        }
+        return (values[0], values[1], values[2])
+    }
+
+    func updateColorModeUI() {
+        guard let colorBtn = searchColorModeButton else { return }
+        let isColor = search_isColorMode
+        colorBtn.state = isColor ? .on : .off
+        colorBtn.contentTintColor = isColor ? NSColor.controlAccentColor : NSColor.secondaryLabelColor
+        colorBtn.bezelColor = isColor ? NSColor.controlAccentColor.withAlphaComponent(0.2) : nil
+        updateAIModeUI()
+    }
+
+    @objc func colorSearchButtonClicked(_ sender: NSButton) {
+        guard globalVar.imageAIEnabled else {
+            showInformationLong(title: NSLocalizedString("Info", comment: "说明"), message: NSLocalizedString("AI search is disabled. Enable it in Settings > Advanced.", comment: "AI搜索未启用"))
+            return
+        }
+        let wasColorFilterOn = publicVar.isColorFilterOn
+        search_isColorMode.toggle()
+        if search_isColorMode {
+            search_aiDebounceTask?.cancel()
+            search_geocoder = nil
+            search_isAIMode = false
+            search_isGeoMode = false
+            publicVar.isGeolocationSearchMode = false
+            publicVar.isGeoFilterOn = false
+            publicVar.geoFilterPaths = []
+            publicVar.isAIFilterOn = false
+            publicVar.aiFilterPaths = []
+            searchColorPickedColors.removeAll()
+            // Show color picker — search triggers when panel closes
+            NSColorPanel.shared.showsAlpha = false
+            NotificationCenter.default.addObserver(self, selector: #selector(colorPanelWillClose(_:)), name: NSWindow.willCloseNotification, object: NSColorPanel.shared)
+            NSColorPanel.shared.orderFront(nil)
+            searchField?.stringValue = ""
+            search_searchText = ""
+            searchField?.placeholderString = NSLocalizedString("Color code e.g. #FF0000 or 255,0,0", comment: "颜色代码输入提示")
+        } else {
+            NotificationCenter.default.removeObserver(self, name: NSWindow.willCloseNotification, object: NSColorPanel.shared)
+            NSColorPanel.shared.orderOut(nil)
+            publicVar.isColorFilterOn = false
+            publicVar.colorFilterPaths = []
+            searchColorPickedColors.removeAll()
+            updateColorModeUI()
+            if wasColorFilterOn {
+                applyColorFilter()
+                publicVar.updateToolbar()
+            }
+        }
+        updateColorModeUI()
+        updateGeoModeUI()
+    }
+
+    @objc private func colorPanelWillClose(_ notification: Notification) {
+        NotificationCenter.default.removeObserver(self, name: NSWindow.willCloseNotification, object: NSColorPanel.shared)
+        guard search_isColorMode else { return }
+        let nsColor = NSColorPanel.shared.color
+        guard let rgb = nsColor.usingColorSpace(.sRGB) else { return }
+        let r = Int(round(rgb.redComponent * 255))
+        let g = Int(round(rgb.greenComponent * 255))
+        let b = Int(round(rgb.blueComponent * 255))
+
+        let hex = String(format: "#%02X%02X%02X", r, g, b)
+        searchField?.stringValue = hex
+        search_searchText = hex
+
+        searchColorPickedColors = [(Double(rgb.redComponent), Double(rgb.greenComponent), Double(rgb.blueComponent))]
+        performColorSearch()
+    }
+
+    func performColorSearch() {
+        guard search_isColorMode, !searchColorPickedColors.isEmpty else { return }
+
+        search_aiDebounceTask?.cancel()
+        search_aiDebounceTask = Task { [weak self] in
+            guard let self = self, !Task.isCancelled else { return }
+            await MainActor.run {
+                self.publicVar.aiIsSearching = true
+                self.startIndeterminate()
+            }
+            do {
+                let results = try await ImageAIService.shared.searchByColor(colors: searchColorPickedColors, tolerance: 0.15, topK: 500)
+                guard !Task.isCancelled else { return }
+                let allPaths = results.compactMap { URL(fileURLWithPath: $0.image.path).absoluteString }
+                let folderPrefix = fileDB.curFolder.hasSuffix("/") ? fileDB.curFolder : fileDB.curFolder + "/"
+                let paths = allPaths.filter { $0.hasPrefix(folderPrefix) }
+                await MainActor.run { [paths] in
+                    guard !Task.isCancelled else { return }
+                    self.publicVar.aiIsSearching = false
+                    self.hideProgress()
+                    if paths.isEmpty {
+                        self.coreAreaView.showInfo(NSLocalizedString("No images matching these colors", comment: "颜色搜索无匹配"), timeOut: 2.0)
+                        return
+                    }
+                    self.publicVar.colorFilterPaths = paths
+                    self.publicVar.isColorFilterOn = true
+                    self.applyColorFilter()
+                    publicVar.updateToolbar()
+                    coreAreaView.showInfo(String(format: NSLocalizedString("Found %d images matching colors", comment: "颜色搜索结果数"), paths.count), timeOut: 2.0)
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    self.publicVar.aiIsSearching = false
+                    self.hideProgress()
+                    log("Color search error: \(error.localizedDescription)")
+                    self.coreAreaView.showInfo(String(format: NSLocalizedString("Color search failed: %@", comment: "颜色搜索失败"), error.localizedDescription), timeOut: 3.0)
+                }
+            }
+        }
+    }
+
+    func applyColorFilter() {
+        publicVar.isFilenameFilterOn = false
+        publicVar.isAIFilterOn = false
+        publicVar.isGeoFilterOn = false
+        let isFiltering = publicVar.isColorFilterOn && !publicVar.colorFilterPaths.isEmpty
+        dirURLCache.removeAll()
+
+        if isFiltering {
+            fileDB.lock()
+            guard let dirModel = fileDB.db[SortKeyDir(fileDB.curFolder)] else {
+                fileDB.unlock()
+                return
+            }
+            var refSize = DEFAULT_SIZE
+            for (_, file) in dirModel.files {
+                if let size = file.originalSize, size.width > 0, size.height > 0 {
+                    refSize = size
+                    break
+                }
+            }
+
+            let colorSet = Set(publicVar.colorFilterPaths)
+            var filtered = [(SortKeyFile, FileModel)]()
+            var seenPaths = Set<String>()
+            for (key, file) in dirModel.files {
+                if colorSet.contains(file.path) {
+                    filtered.append((key, file))
+                    seenPaths.insert(file.path)
+                }
+            }
+            let sortType = publicVar.profile.sortType
+            let isSortFolderFirst = publicVar.profile.isSortFolderFirst
+            let isSortUseFullPath = publicVar.profile.isSortUseFullPath
+            for path in publicVar.colorFilterPaths {
+                guard !seenPaths.contains(path) else { continue }
+                let sortKey = SortKeyFile(path, createDate: Date(), modDate: Date(), addDate: Date(), size: 0, isDir: false, isInSameDir: false, sortType: sortType, isSortFolderFirst: isSortFolderFirst, isSortUseFullPath: isSortUseFullPath, randomSeed: 0)
+                let fileModel = FileModel(path: path, ver: fileDB.ver, isDir: false)
+                fileModel.originalSize = refSize
+                fileModel.canBeCalcued = true
+                let url = URL(string: path)
+                fileModel.ext = url?.pathExtension.lowercased() ?? ""
+                fileModel.type = globalVar.HandledImageExtensions.contains(fileModel.ext) ? .image : .other
+                filtered.append((sortKey, fileModel))
+            }
+            filtered.sort { $0.0 < $1.0 }
+            for (_, file) in filtered {
+                if file.originalSize == nil || file.originalSize!.width == 0 {
+                    file.originalSize = refSize
+                }
+                file.canBeCalcued = true
+            }
+            dirModel.files = Map<SortKeyFile, FileModel>(sortedElements: filtered)
+            dirModel.aiOrderedPaths = []
+            dirModel.isFiltered = true
+
+            fileDB.ver += 1
+            dirModel.ver = fileDB.ver
+            var id = 0; var idInImage = 0; var idInImageAndVideo = 0
+            var imageCount = 0; var videoCount = 0
+            for (_, file) in dirModel.files {
+                file.ver = fileDB.ver
+                if !file.isDir {
+                    let ext = file.ext
+                    if publicVar.HandledImageAndRawExtensions.contains(ext) {
+                        file.idInImage = idInImage; idInImage += 1
+                        imageCount += 1
+                    }
+                    if publicVar.HandledFileExtensions.contains(ext) {
+                        file.id = id; id += 1
+                    }
+                    if publicVar.HandledImageAndRawExtensions.contains(ext) || publicVar.HandledVideoExtensions.contains(ext) {
+                        file.idInImageAndVideo = idInImageAndVideo; idInImageAndVideo += 1
+                    }
+                    if publicVar.HandledVideoExtensions.contains(ext) {
+                        videoCount += 1
+                    }
+                }
+            }
+            dirModel.imageCount = imageCount
+            dirModel.videoCount = videoCount
+            dirModel.fileCount = id
+            dirModel.layoutCalcPos = 0
+            fileDB.unlock()
+
+            readInfoTaskPoolLock.lock()
+            readInfoTaskPool.removeAll()
+            readInfoTaskPoolLock.unlock()
+            let curFolder = fileDB.curFolder
+            recalcLayout(curFolder)
+            refreshCollectionView(needLoadThumbPriority: true)
+        } else {
+            fileDB.lock()
+            let curFolder = fileDB.curFolder
+            fileDB.unlock()
+            if let folderURL = URL(string: curFolder) {
+                DirMetadataCache.shared.removeCache(for: folderURL)
+            }
+            refreshCollectionView(needLoadThumbPriority: true)
+        }
+    }
+
     @objc func geoSearchButtonClicked(_ sender: NSButton) {
         let wasGeoFilterOn = publicVar.isGeoFilterOn
         search_isGeoMode.toggle()
+        search_isColorMode = false
         search_isAIMode = false
         search_aiDebounceTask?.cancel()
         search_geocoder = nil
@@ -276,6 +556,8 @@ extension ViewController {
             publicVar.isGeoFilterOn = false
             publicVar.geoFilterPaths = []
             publicVar.isAIFilterOn = false
+            publicVar.isColorFilterOn = false
+            publicVar.colorFilterPaths = []
             updateGeoModeUI()
             if wasGeoFilterOn {
                 searchField?.stringValue = ""
@@ -462,6 +744,7 @@ extension ViewController {
     func applyGeoFilter() {
         publicVar.isFilenameFilterOn = false
         publicVar.isAIFilterOn = false
+        publicVar.isColorFilterOn = false
         let isFiltering = publicVar.isGeoFilterOn && !publicVar.geoFilterPaths.isEmpty
         dirURLCache.removeAll()
 
@@ -554,6 +837,7 @@ extension ViewController {
         }
         let wasAIFilterOn = publicVar.isAIFilterOn
         search_isAIMode.toggle()
+        search_isColorMode = false
         if search_isAIMode {
             // Switching to AI — turn off geo mode
             search_geocoder = nil
@@ -566,6 +850,8 @@ extension ViewController {
             search_aiDebounceTask?.cancel()
             publicVar.isAIFilterOn = false
             publicVar.aiFilterPaths = []
+            publicVar.isColorFilterOn = false
+            publicVar.colorFilterPaths = []
             updateAIModeUI()
             updateGeoModeUI()
             if wasAIFilterOn {
@@ -717,6 +1003,7 @@ extension ViewController {
     
     func applyAIFilter() {
         publicVar.isFilenameFilterOn = false
+        publicVar.isColorFilterOn = false
         let isFiltering = publicVar.isAIFilterOn && !publicVar.aiFilterPaths.isEmpty
         dirURLCache.removeAll()
 
@@ -1067,6 +1354,32 @@ extension ViewController {
             }
             return false
         }
+        if search_isColorMode {
+            if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                let searchText = searchField?.stringValue ?? ""
+                if !searchText.isEmpty, let (r, g, b) = parseColorCode(searchText) {
+                    searchColorPickedColors = [(r, g, b)]
+                    searchField?.stringValue = String(format: "#%02X%02X%02X", Int(r * 255), Int(g * 255), Int(b * 255))
+                    performColorSearch()
+                } else if !searchText.isEmpty {
+                    coreAreaView.showInfo(NSLocalizedString("Invalid color code. Use #RRGGBB or R,G,B", comment: "颜色代码格式错误"), timeOut: 2.0)
+                }
+                return true
+            }
+            if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+                if publicVar.isColorFilterOn {
+                    publicVar.isColorFilterOn = false
+                    publicVar.colorFilterPaths = []
+                    closeSearchOverlay()
+                    applyColorFilter()
+                    publicVar.updateToolbar()
+                } else {
+                    closeSearchOverlay()
+                }
+                return true
+            }
+            return false
+        }
         if commandSelector == #selector(NSResponder.insertNewline(_:)) {
             let searchText = searchField?.stringValue ?? ""
             let isShiftPressed = NSEvent.modifierFlags.contains(.shift)
@@ -1092,12 +1405,18 @@ extension ViewController {
             publicVar.isGeoFilterOn = false
             publicVar.geoFilterPaths = []
             search_isGeoMode = false
+            publicVar.isColorFilterOn = false
+            publicVar.colorFilterPaths = []
+            search_isColorMode = false
         } else {
             search_filterText = searchField?.stringValue ?? ""
             // 文件名筛选时关闭其他模式
             publicVar.isGeoFilterOn = false
             publicVar.geoFilterPaths = []
             search_isGeoMode = false
+            publicVar.isColorFilterOn = false
+            publicVar.colorFilterPaths = []
+            search_isColorMode = false
         }
         search_filterIsUseFullPath = search_isUseFullPath
         publicVar.isFilenameFilterOn = search_filterText == "" ? false : true
