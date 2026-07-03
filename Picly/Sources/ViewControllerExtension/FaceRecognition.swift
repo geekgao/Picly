@@ -39,6 +39,9 @@ extension ViewController {
 
         let browserVC = PersonBrowserViewController()
         browserVC.onClose = { [weak self] in
+            self?.reverseImageSearchTask?.cancel()
+            self?.search_aiDebounceTask?.cancel()
+            self?.personBrowserVC?.setIndexingState(isIndexing: false)
             self?.personBrowserOverlay?.removeFromSuperview()
             self?.personBrowserOverlay = nil
             self?.personBrowserVC = nil
@@ -52,6 +55,10 @@ extension ViewController {
         }
         browserVC.onIndexFolder = { [weak self] in
             self?.indexFacesInCurrentFolder()
+        }
+        browserVC.onIndexCancel = { [weak self] in
+            self?.faceIndexTask?.cancel()
+            self?.faceIndexTask = nil
         }
         browserVC.view.frame = panel.bounds
         browserVC.view.autoresizingMask = [.width, .height]
@@ -69,6 +76,9 @@ extension ViewController {
     }
 
     @objc func closePersonBrowserAction(_ sender: Any? = nil) {
+        reverseImageSearchTask?.cancel()
+        search_aiDebounceTask?.cancel()
+        personBrowserVC?.setIndexingState(isIndexing: false)
         personBrowserOverlay?.removeFromSuperview()
         personBrowserOverlay = nil
         personBrowserVC = nil
@@ -94,11 +104,16 @@ extension ViewController {
         loadingLabel.identifier = NSUserInterfaceItemIdentifier(rawValue: "FaceOverlayLoading")
         largeImageView.addSubview(loadingLabel)
 
-        Task {
+        faceOverlayTask?.cancel()
+        faceOverlayTask = Task { [weak self] in
+            guard let self = self, !Task.isCancelled else { return }
             do {
                 try await ImageAIService.shared.ensureRunning()
+                guard !Task.isCancelled else { return }
                 try? await FaceService.shared.indexFaces(path: url.path)
+                guard !Task.isCancelled else { return }
                 let matches = try await FaceService.shared.searchFacesByImage(path: url.path, topK: 10, minScore: 0.0)
+                guard !Task.isCancelled else { return }
                 let samePhoto = matches.filter { $0.photoPath == url.path }
 
                 await MainActor.run {
@@ -136,6 +151,7 @@ extension ViewController {
                     self.largeImageView.addSubview(overlay, positioned: .above, relativeTo: nil)
                 }
             } catch {
+                guard !Task.isCancelled else { return }
                 await MainActor.run { loadingLabel.removeFromSuperview() }
                 log("Face overlay failed: \(error.localizedDescription)")
             }
@@ -143,6 +159,12 @@ extension ViewController {
     }
 
     func hideFaceOverlay() {
+        reverseImageSearchTask?.cancel()
+        search_aiDebounceTask?.cancel()
+        faceSearchTask?.cancel()
+        faceSearchTask = nil
+        faceOverlayTask?.cancel()
+        faceOverlayTask = nil
         let subs = largeImageView.subviews
         subs.first(where: { $0.identifier?.rawValue == "FaceOverlayView" })?.removeFromSuperview()
         subs.first(where: { $0.identifier?.rawValue == "FaceOverlayLoading" })?.removeFromSuperview()
@@ -178,6 +200,26 @@ extension ViewController {
             return
         }
 
+        // If already indexing, just attach progress to person browser
+        if FaceIndexingManager.shared.isBusy {
+            let progress = FaceIndexingManager.shared.currentProgress
+            coreAreaView.showInfo(String(format: NSLocalizedString("Already indexing: %d/%d", comment: "已在索引中"), progress.done, progress.total), timeOut: 2.0)
+            personBrowserVC?.setIndexingState(isIndexing: true, done: progress.done, total: progress.total)
+            Task {
+                await FaceIndexingManager.shared.attachProgress { [weak self] done, total in
+                    DispatchQueue.main.async {
+                        self?.personBrowserVC?.setIndexingState(isIndexing: true, done: done, total: total)
+                        if done >= total {
+                            self?.personBrowserVC?.setIndexingState(isIndexing: false)
+                            self?.personBrowserVC?.refresh()
+                            self?.coreAreaView.showInfo(NSLocalizedString("Face indexing complete", comment: "人脸索引完成"), timeOut: 3.0)
+                        }
+                    }
+                }
+            }
+            return
+        }
+
         // Get all image file paths from the current folder's dirModel
         fileDB.lock()
         guard let dirModel = fileDB.db[SortKeyDir(fileDB.curFolder)] else {
@@ -188,7 +230,6 @@ extension ViewController {
         var paths: [String] = []
         for (_, file) in dirModel.files {
             if file.type == .image {
-                // Convert file:// URL to bare path
                 let barePath = URL(string: file.path)?.path ?? file.path
                 paths.append(barePath)
             }
@@ -203,19 +244,29 @@ extension ViewController {
         log("Face: collected \(paths.count) image paths for indexing")
         coreAreaView.showInfo(String(format: NSLocalizedString("Indexing %d faces...", comment: "索引 %d 张人脸中"), paths.count), timeOut: 2.0)
 
-        Task {
+        faceIndexTask?.cancel()
+        faceIndexTask = Task { [weak self] in
+            guard let self = self, !Task.isCancelled else { return }
+            await MainActor.run {
+                self.personBrowserVC?.setIndexingState(isIndexing: true, done: 0, total: paths.count)
+            }
             await FaceIndexingManager.shared.indexPhotosBatch(paths) { done, total in
-                if done % 10 == 0 || done == total {
+                if done % 5 == 0 || done == total {
+                    guard !Task.isCancelled else { return }
                     DispatchQueue.main.async {
                         let msg = String(format: NSLocalizedString("Faces: %d/%d", comment: "人脸索引进度"), done, total)
                         self.coreAreaView.showInfo(msg, timeOut: 1.0)
+                        self.personBrowserVC?.setIndexingState(isIndexing: true, done: done, total: total)
                         log("Face: progress \(msg)")
                     }
                 }
             }
+            guard !Task.isCancelled else { return }
             await MainActor.run {
-                coreAreaView.showInfo(NSLocalizedString("Face indexing complete", comment: "人脸索引完成"), timeOut: 3.0)
-                log("Face: indexing complete")
+                self.personBrowserVC?.setIndexingState(isIndexing: false)
+                self.coreAreaView.showInfo(NSLocalizedString("Face indexing complete", comment: "人脸索引完成"), timeOut: 3.0)
+                self.personBrowserVC?.refresh()
+                log("Face: indexing complete, person browser refreshed")
             }
         }
         log("Face: indexing task launched")
@@ -248,13 +299,15 @@ extension ViewController {
     }
 
     private func mergeFaceIntoPerson(_ faceId: String) {
-        Task {
+        Task { [weak self] in
+            guard let self = self else { return }
             do {
                 let allPersons = try await FaceService.shared.getPersons()
                 await MainActor.run {
                     guard let window = view.window, !allPersons.isEmpty else { return }
                     let picker = PersonPickerPopover(persons: allPersons) { targetId in
-                        Task {
+                        Task { [weak self] in
+                            guard let self = self else { return }
                             do {
                                 try await FaceService.shared.mergeFace(faceId: faceId, intoPersonId: targetId)
                             } catch {
@@ -273,13 +326,23 @@ extension ViewController {
     /// From overlay face click: search by face ID
     private func searchByFaceId(_ faceId: String) {
         hideFaceOverlay()
-        Task {
+        reverseImageSearchTask?.cancel()
+        search_aiDebounceTask?.cancel()
+        faceSearchTask?.cancel()
+        faceSearchTask = Task { [weak self] in
+            guard let self = self, !Task.isCancelled else { return }
             do {
                 let matches = try await FaceService.shared.searchFacesByFaceId(faceId: faceId, topK: 100, minScore: 0.5)
+                guard !Task.isCancelled else { return }
                 let uniquePhotos = Array(Set(matches.map(\.photoPath))).sorted()
+                try Task.checkCancellation()
                 await MainActor.run { applyFaceFilter(photoPaths: uniquePhotos) }
             } catch {
+                guard !Task.isCancelled else { return }
                 log("Face search by ID failed: \(error.localizedDescription)")
+                await MainActor.run {
+                    self.coreAreaView.showInfo(String(format: NSLocalizedString("Face search failed: %@", comment: "人脸搜索失败"), error.localizedDescription), timeOut: 3.0)
+                }
             }
         }
     }
@@ -287,34 +350,66 @@ extension ViewController {
     /// From person browser: show all photos for a person
     private func searchPhotosByPerson(_ personId: String) {
         log("Face: searchPhotosByPerson \(personId)")
-        Task {
+        reverseImageSearchTask?.cancel()
+        search_aiDebounceTask?.cancel()
+        faceSearchTask?.cancel()
+        faceSearchTask = Task { [weak self] in
+            guard let self = self, !Task.isCancelled else { return }
             do {
                 let photos = try await FaceService.shared.getPersonPhotos(id: personId)
+                guard !Task.isCancelled else { return }
                 log("Face: got \(photos.count) photos for person \(personId)")
                 if photos.isEmpty {
                     log("Face: no photos for person \(personId)")
                 }
+                try Task.checkCancellation()
                 await MainActor.run { applyFaceFilter(photoPaths: photos) }
             } catch {
+                guard !Task.isCancelled else { return }
                 log("Face: search by person failed: \(error.localizedDescription)")
+                await MainActor.run {
+                    self.coreAreaView.showInfo(String(format: NSLocalizedString("Face search failed: %@", comment: "人脸搜索失败"), error.localizedDescription), timeOut: 3.0)
+                }
             }
         }
     }
 
     /// From context menu "Search Faces...": search by reference image
     @objc func searchFacesInImage(_ sender: Any?) {
-        guard let selectedPaths = getSelectedImagePaths(), !selectedPaths.isEmpty else { return }
+        guard globalVar.imageAIEnabled else {
+            coreAreaView.showInfo(NSLocalizedString("AI features are disabled", comment: "AI 功能未开启"), timeOut: 3.0)
+            return
+        }
+        guard let selectedPaths = getSelectedImagePaths(), !selectedPaths.isEmpty else {
+            log("Face: searchFacesInImage no selected image paths")
+            return
+        }
         let path = selectedPaths[0]
-        guard let url = URL(string: path) else { return }
+        guard let url = URL(string: path) else {
+            log("Face: searchFacesInImage invalid URL for path \(path)")
+            return
+        }
 
-        Task {
+        log("Face: searchFacesInImage starting for \(url.path)")
+        reverseImageSearchTask?.cancel()
+        search_aiDebounceTask?.cancel()
+        faceSearchTask?.cancel()
+        faceSearchTask = Task { [weak self] in
+            guard let self = self, !Task.isCancelled else { return }
             do {
                 try await FaceService.shared.indexFaces(path: url.path)
+                guard !Task.isCancelled else { return }
                 let matches = try await FaceService.shared.searchFacesByImage(path: url.path, topK: 100, minScore: 0.5)
+                guard !Task.isCancelled else { return }
                 let uniquePhotos = Array(Set(matches.map(\.photoPath))).sorted()
+                try Task.checkCancellation()
                 await MainActor.run { applyFaceFilter(photoPaths: uniquePhotos) }
             } catch {
+                guard !Task.isCancelled else { return }
                 log("Face search failed: \(error.localizedDescription)")
+                await MainActor.run {
+                    self.coreAreaView.showInfo(String(format: NSLocalizedString("Face search failed: %@", comment: "人脸搜索失败"), error.localizedDescription), timeOut: 3.0)
+                }
             }
         }
     }

@@ -1485,7 +1485,11 @@ class CustomCollectionViewItem: NSCollectionViewItem {
     }
 
     @objc func actFaceSearch() {
-        guard let viewController = getViewController(collectionView) else { return }
+        guard let viewController = getViewController(collectionView) else {
+            log("Face: actFaceSearch no viewController found")
+            return
+        }
+        log("Face: actFaceSearch called, calling searchFacesInImage")
         viewController.searchFacesInImage(nil)
     }
 

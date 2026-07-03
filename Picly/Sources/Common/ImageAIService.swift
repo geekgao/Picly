@@ -57,6 +57,13 @@ actor ImageAIService {
         monitorTask?.cancel()
         startWatching()
 
+        // Kill any leftover server on the same port
+        let killTask = Process()
+        killTask.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+        killTask.arguments = ["-f", "imageai serve.*--port \(port)"]
+        try? killTask.run()
+        killTask.waitUntilExit()
+
         let dataDir: String = {
             let home = FileManager.default.homeDirectoryForCurrentUser.path
             let existingDir = "\(home)/.imageai/data"
@@ -71,9 +78,42 @@ actor ImageAIService {
 
         let binaryPath: String
         if let bundlePath = Bundle.main.path(forResource: "imageai", ofType: nil, inDirectory: nil) {
-            binaryPath = bundlePath
+            // Copy out of app bundle to avoid macOS security killing the child process
+            let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            let dir = appSupport.appendingPathComponent("Picly", isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let dest = dir.appendingPathComponent("imageai")
+            // Re-copy if bundle binary is newer or destination doesn't exist
+            let bundleDate = (try? FileManager.default.attributesOfItem(atPath: bundlePath)[.modificationDate]) as? Date
+            let destDate = (try? FileManager.default.attributesOfItem(atPath: dest.path)[.modificationDate]) as? Date
+            if destDate == nil || (bundleDate != nil && bundleDate! > destDate!) {
+                try? FileManager.default.removeItem(at: dest)
+                try? FileManager.default.copyItem(atPath: bundlePath, toPath: dest.path)
+                log("ImageAI: copied binary to \(dest.path)")
+            }
+            // Also copy resource bundle
+            if let bundleDir = Bundle.main.resourceURL?.appendingPathComponent("imageai_ImageAICLI.bundle"),
+               FileManager.default.fileExists(atPath: bundleDir.path) {
+                let destBundle = dir.appendingPathComponent("imageai_ImageAICLI.bundle")
+                let bundleDate = (try? FileManager.default.attributesOfItem(atPath: bundleDir.path)[.modificationDate]) as? Date
+                let destBundleDate = (try? FileManager.default.attributesOfItem(atPath: destBundle.path)[.modificationDate]) as? Date
+                if destBundleDate == nil || (bundleDate != nil && bundleDate! > destBundleDate!) {
+                    try? FileManager.default.removeItem(at: destBundle)
+                    try? FileManager.default.copyItem(atPath: bundleDir.path, toPath: destBundle.path)
+                }
+            }
+            binaryPath = dest.path
         } else {
-            binaryPath = "/Users/lisheng/Workdir/imageai/.build/out/Products/Release/imageai"
+            // Fallback: try debug build first, then release
+            let debugPath = "/Users/lisheng/Workdir/imageai/.build/debug/imageai"
+            let releasePath = "/Users/lisheng/Workdir/imageai/.build/out/Products/Release/imageai"
+            if FileManager.default.fileExists(atPath: debugPath) {
+                binaryPath = debugPath
+            } else if FileManager.default.fileExists(atPath: releasePath) {
+                binaryPath = releasePath
+            } else {
+                binaryPath = debugPath
+            }
         }
 
         let proc = Process()
@@ -334,6 +374,11 @@ enum ImageAIError: LocalizedError {
         case .invalidQuery:
             return "Invalid search query"
         case .httpError(let code, let body):
+            if let data = body.data(using: .utf8),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let msg = json["error"] as? String {
+                return msg
+            }
             if !body.isEmpty { return "服务器返回错误 \(code): \(body)" }
             return "服务器返回错误 \(code)"
         case .notRunning:

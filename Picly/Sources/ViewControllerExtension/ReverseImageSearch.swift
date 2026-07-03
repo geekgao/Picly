@@ -122,6 +122,8 @@ extension ViewController {
     @objc func closeReverseImageSearchOverlay() {
         reverseImageSearchTask?.cancel()
         reverseImageSearchTask = nil
+        search_aiDebounceTask?.cancel()
+        faceSearchTask?.cancel()
         reverseImageSearchOverlay?.removeFromSuperview()
         reverseImageSearchOverlay = nil
         reverseImageDropZone = nil
@@ -188,6 +190,8 @@ extension ViewController {
         }
 
         reverseImageSearchTask?.cancel()
+        search_aiDebounceTask?.cancel()
+        faceSearchTask?.cancel()
         reverseImageSearchTask = Task { [weak self] in
             guard let self = self, !Task.isCancelled else { return }
 

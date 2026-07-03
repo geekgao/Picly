@@ -5,6 +5,7 @@ class PersonBrowserViewController: NSViewController {
     var onClose: (() -> Void)?
     var onPersonSelected: ((String) -> Void)?
     var onIndexFolder: (() -> Void)?
+    var onIndexCancel: (() -> Void)?
     private var persons: [PersonInfo] = []
     private var collectionView: NSCollectionView!
     private var scrollView: NSScrollView!
@@ -13,7 +14,9 @@ class PersonBrowserViewController: NSViewController {
     private var titleLabel: NSTextField!
     private var statusLabel: NSTextField!
     private var spinner: NSProgressIndicator!
+    private var indexButton: NSButton!
     private var selectedIndex: Int?
+    private var isIndexing = false
 
     override func loadView() {
         let v = DynamicBackgroundView(frame: NSRect(x: 0, y: 0, width: 500, height: 500))
@@ -50,7 +53,7 @@ class PersonBrowserViewController: NSViewController {
         closeButton.action = #selector(closePersonBrowser)
         titleBar.addSubview(closeButton)
 
-        let indexButton = NSButton(frame: NSRect(x: view.bounds.width - 64, y: 8, width: 24, height: 24))
+        indexButton = NSButton(frame: NSRect(x: view.bounds.width - 64, y: 8, width: 24, height: 24))
         indexButton.autoresizingMask = [.minXMargin, .minYMargin]
         indexButton.bezelStyle = .smallSquare
         indexButton.isBordered = false
@@ -101,15 +104,67 @@ class PersonBrowserViewController: NSViewController {
     }
 
     @objc private func closePersonBrowser() {
+        if isIndexing {
+            onIndexCancel?()
+        }
         onClose?()
     }
 
     @objc private func indexFolderAction() {
+        guard !isIndexing else { return }
         log("Person browser: indexFolder requested")
         onIndexFolder?()
     }
 
+    func setIndexingState(isIndexing: Bool, done: Int = 0, total: Int = 0) {
+        self.isIndexing = isIndexing
+        if isIndexing {
+            spinner.startAnimation(nil)
+            spinner.isHidden = false
+            statusLabel.stringValue = String(format: NSLocalizedString("Indexing faces: %d/%d...", comment: "索引人脸进度"), done, total)
+            statusLabel.isHidden = false
+            indexButton.isEnabled = false
+            indexButton.contentTintColor = .disabledControlTextColor
+            if done >= total {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    guard let self = self, !FaceIndexingManager.shared.isBusy else { return }
+                    self.setIndexingState(isIndexing: false)
+                    self.refresh()
+                }
+            }
+        } else {
+            spinner.stopAnimation(nil)
+            spinner.isHidden = true
+            indexButton.isEnabled = true
+            indexButton.contentTintColor = .secondaryLabelColor
+        }
+    }
+
     private func load() {
+        if FaceIndexingManager.shared.isBusy {
+            let progress = FaceIndexingManager.shared.currentProgress
+            setIndexingState(isIndexing: true, done: progress.done, total: progress.total)
+            Task { @MainActor in
+                await FaceIndexingManager.shared.attachProgress { [weak self] done, total in
+                    DispatchQueue.main.async {
+                        guard let self = self else { return }
+                        self.setIndexingState(isIndexing: true, done: done, total: total)
+                        if done >= total {
+                            DispatchQueue.main.async { [weak self] in
+                                self?.setIndexingState(isIndexing: false)
+                                self?.refresh()
+                            }
+                        }
+                    }
+                }
+            }
+            return
+        }
+
+        loadPersonList()
+    }
+
+    private func loadPersonList() {
         spinner.startAnimation(nil)
         spinner.isHidden = false
         statusLabel.stringValue = NSLocalizedString("Loading people...", comment: "加载人物...")

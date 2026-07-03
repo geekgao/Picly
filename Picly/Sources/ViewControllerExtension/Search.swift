@@ -237,6 +237,8 @@ extension ViewController {
 //            view.window?.makeFirstResponder(collectionView)
 //        }
         search_aiDebounceTask?.cancel()
+        reverseImageSearchTask?.cancel()
+        faceSearchTask?.cancel()
         search_geocoder = nil
         search_isAIMode = false
         search_isGeoMode = false
@@ -405,6 +407,8 @@ extension ViewController {
         guard search_isColorMode, !searchColorPickedColors.isEmpty else { return }
 
         search_aiDebounceTask?.cancel()
+        reverseImageSearchTask?.cancel()
+        faceSearchTask?.cancel()
         search_aiDebounceTask = Task { [weak self] in
             guard let self = self, !Task.isCancelled else { return }
             await MainActor.run {
@@ -875,6 +879,8 @@ extension ViewController {
     
     func performAISearch(_ query: String) {
         search_aiDebounceTask?.cancel()
+        reverseImageSearchTask?.cancel()
+        faceSearchTask?.cancel()
         guard !query.isEmpty else {
             publicVar.isAIFilterOn = false
             publicVar.aiFilterPaths = []
@@ -1047,7 +1053,13 @@ extension ViewController {
                 guard !seenPaths.contains(path) else { continue }
                 let sortKey = SortKeyFile(path, createDate: Date(), modDate: Date(), addDate: Date(), size: 0, isDir: false, isInSameDir: false, sortType: sortType, isSortFolderFirst: isSortFolderFirst, isSortUseFullPath: isSortUseFullPath, randomSeed: 0)
                 let fileModel = FileModel(path: path, ver: fileDB.ver, isDir: false)
-                fileModel.originalSize = refSize
+                if let url = URL(string: path),
+                   let imageInfo = getImageInfo(url: url, needMetadata: false),
+                   let size = imageInfo.size, size.width > 0, size.height > 0 {
+                    fileModel.originalSize = size
+                } else {
+                    fileModel.originalSize = refSize
+                }
                 fileModel.canBeCalcued = true
                 let url = URL(string: path)
                 fileModel.ext = url?.pathExtension.lowercased() ?? ""

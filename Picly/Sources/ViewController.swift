@@ -497,6 +497,9 @@ class ViewController: NSViewController, NSSplitViewDelegate, NSSearchFieldDelega
     var reverseImagePreview: NSImageView?
     var reverseImageStatusLabel: NSTextField?
     var reverseImageSearchTask: Task<Void, Never>?
+    var faceSearchTask: Task<Void, Never>?
+    var faceOverlayTask: Task<Void, Never>?
+    var faceIndexTask: Task<Void, Never>?
     var personBrowserOverlay: NSView?
     var personBrowserVC: PersonBrowserViewController?
     var reverseImageChooseButton: NSButton?
