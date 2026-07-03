@@ -836,6 +836,20 @@ class ViewController: NSViewController, NSSplitViewDelegate, NSSearchFieldDelega
         // Monitor keyboard key presses
         eventMonitorKeyDown = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self=self else{return event}
+            if self.largeImageView.isInEditMode {
+                if event.modifierFlags.isEmpty {
+                    let key = event.specialKey ?? .f30
+                    if key == .leftArrow {
+                        self.previousLargeImage()
+                        return nil
+                    }
+                    if key == .rightArrow {
+                        self.nextLargeImage()
+                        return nil
+                    }
+                }
+                return event
+            }
             return self.KeyShortcutManager(event: event)
         }
         

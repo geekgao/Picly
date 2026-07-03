@@ -7,6 +7,8 @@ import Foundation
 import Cocoa
 import VisionKit
 import AVKit
+import WebKit
+import UniformTypeIdentifiers
 
 class LargeImageView: NSView {
 
@@ -48,14 +50,16 @@ class LargeImageView: NSView {
 
     // MARK: - 图片编辑相关属性
     // MARK: - Image editing related properties
-    var imageEditingView: ImageEditingView?
+    var webEditorView: WKWebView?
     var isInEditMode: Bool = false
-    
+    private var editDismissHandler: (() -> Void)?
+    private var lastEditorSavePath: String?
+    private var editorLoadingIndicator: NSProgressIndicator?
+
     /// 同步编辑画布的位置和大小与 imageView 保持一致
     /// Sync editing canvas position and size with imageView
     func syncEditingCanvasFrame() {
-        guard isInEditMode, let editingView = imageEditingView else { return }
-        editingView.setImageFrame(imageView.frame)
+        guard isInEditMode, let _ = webEditorView else { return }
     }
     
     var file: FileModel = FileModel(path: "", ver: 0)
@@ -1947,6 +1951,10 @@ class LargeImageView: NSView {
 
                 let actionItemConvert = menu.addItem(withTitle: NSLocalizedString("Convert Image...", comment: "转换格式..."), action: #selector(actConvertImage), keyEquivalent: "")
 
+                menu.addItem(NSMenuItem.separator())
+
+                let actionItemEditImage = menu.addItem(withTitle: NSLocalizedString("Edit Image...", comment: "编辑图片..."), action: #selector(actEditImage), keyEquivalent: "")
+
                 let actionItemReverseImageSearch = menu.addItem(withTitle: NSLocalizedString("Search Similar Images...", comment: "以图搜图..."), action: #selector(actReverseImageSearch), keyEquivalent: "")
 
                 let actionItemFaceSearch = menu.addItem(withTitle: NSLocalizedString("Search Faces...", comment: "搜索人脸..."), action: #selector(actFaceSearch), keyEquivalent: "")
@@ -2178,6 +2186,10 @@ class LargeImageView: NSView {
         getViewController(self)?.handleConvertImage()
     }
 
+    @objc func actEditImage() {
+        enterEditMode()
+    }
+
     @objc func actReverseImageSearch() {
         getViewController(self)?.reverseImageSearchFromSelected()
     }
@@ -2337,14 +2349,7 @@ class LargeImageView: NSView {
             playVideo(reloadForAB: true)
         }else{
             unSetOcr()
-            // 同步旋转编辑画布内容
-            // Sync rotate editing canvas content
-            imageEditingView?.rotateClockwise()
-            // 旋转后重新绘制图像
-            // Redraw image after rotation
             viewController.changeLargeImage(firstShowThumb: true, resetSize: true, triggeredByLongPress: false)
-            // 旋转后同步画布位置
-            // Sync canvas position after rotation
             syncEditingCanvasFrame()
         }
     }
@@ -2358,14 +2363,7 @@ class LargeImageView: NSView {
             playVideo(reloadForAB: true)
         }else{
             unSetOcr()
-            // 同步旋转编辑画布内容
-            // Sync rotate editing canvas content
-            imageEditingView?.rotateCounterclockwise()
-            // 旋转后重新绘制图像
-            // Redraw image after rotation
             viewController.changeLargeImage(firstShowThumb: true, resetSize: true, triggeredByLongPress: false)
-            // 旋转后同步画布位置
-            // Sync canvas position after rotation
             syncEditingCanvasFrame()
         }
     }
@@ -2410,85 +2408,343 @@ class LargeImageView: NSView {
     
     // MARK: - 图片编辑模式
     // MARK: - Image Editing Mode
-    
-    /// 进入编辑模式 - 调用此函数开始编辑当前图片
-    /// Enter edit mode - Call this function to start editing the current image
-    /// - Parameter completion: 保存完成后的回调，参数为编辑后的图片
-    /// - Parameter completion: Callback after saving, parameter is the edited image
-    func enterEditMode(completion: ((NSImage) -> Void)? = nil) {
-        // 只有图片才能编辑
-        // Only images can be edited
+
+    func enterEditMode(onDismiss: (() -> Void)? = nil) {
         guard file.type == .image else {
             showInfo(NSLocalizedString("Only images can be edited", comment: "只有图片才能编辑"))
             return
         }
-        
-        // 如果已经在编辑模式，则返回
-        // If already in edit mode, return
+
         guard !isInEditMode else { return }
-        
+
         isInEditMode = true
-        
-        // 创建编辑视图
-        // Create editing view
-        imageEditingView = ImageEditingView(frame: self.bounds)
-        imageEditingView?.autoresizingMask = [.width, .height]
-        imageEditingView?.originalImage = imageView.image
-        
-        // 设置画布与图片对齐
-        // Set canvas aligned with image
-        imageEditingView?.setImageFrame(imageView.frame)
-        
-        // 设置保存回调
-        // Set save callback
-        imageEditingView?.onSave = { [weak self] editedImage in
-            guard let self = self else { return }
-            completion?(editedImage)
-            self.exitEditMode()
+        editDismissHandler = onDismiss
+
+        Task { await ImageAIService.shared.start() }
+
+        let userContent = WKUserContentController()
+        userContent.add(self, name: "openFileDialog")
+        userContent.add(self, name: "saveFileDialog")
+        userContent.add(self, name: "readClipboard")
+        userContent.add(self, name: "writeClipboard")
+        userContent.add(self, name: "closeEditor")
+
+        let webConfig = WKWebViewConfiguration()
+        webConfig.userContentController = userContent
+        if #available(macOS 14.0, *) {
+            webConfig.defaultWebpagePreferences.allowsContentJavaScript = true
         }
-        
-        // 设置取消回调
-        // Set cancel callback
-        imageEditingView?.onCancel = { [weak self] in
-            self?.exitEditMode()
+
+        let webView = WKWebView(frame: self.bounds, configuration: webConfig)
+        webView.autoresizingMask = [.width, .height]
+        webView.setValue(false, forKey: "drawsBackground")
+        webView.navigationDelegate = self
+        webEditorView = webView
+
+        let port = ImageAIService.defaultPort
+        let rawPath = file.path.replacingOccurrences(of: "file://", with: "").removingPercentEncoding ?? file.path
+        let encodedPath = rawPath.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let urlString = "http://127.0.0.1:\(port)/editor/?path=\(encodedPath)&save=overwrite&embedded=1"
+        if let url = URL(string: urlString) {
+            webView.load(URLRequest(url: url))
         }
-        
-        // 添加编辑视图
-        // Add editing view
-        if let editingView = imageEditingView {
-            addSubview(editingView, positioned: .above, relativeTo: nil)
-        }
-        
-        // 隐藏其他UI元素
-        // Hide other UI elements
+
+        addSubview(webView, positioned: .above, relativeTo: nil)
+
+        let spinner = NSProgressIndicator()
+        spinner.style = .spinning
+        spinner.controlSize = .regular
+        spinner.isIndeterminate = true
+        spinner.isDisplayedWhenStopped = false
+        spinner.sizeToFit()
+        spinner.frame.origin = NSPoint(
+            x: (self.bounds.width - spinner.frame.width) / 2,
+            y: (self.bounds.height - spinner.frame.height) / 2
+        )
+        spinner.autoresizingMask = [.minXMargin, .maxXMargin, .minYMargin, .maxYMargin]
+        spinner.startAnimation(nil)
+        addSubview(spinner, positioned: .above, relativeTo: webView)
+        editorLoadingIndicator = spinner
+
         hideArrowView(leftArrowImageView)
         hideArrowView(rightArrowImageView)
-        
+
         showInfo(NSLocalizedString("Edit Mode", comment: "编辑模式"), timeOut: 1.5)
     }
-    
-    /// 退出编辑模式
-    /// Exit edit mode
-    func exitEditMode() {
+
+    func exitEditMode(reloadImage: Bool = true) {
         guard isInEditMode else { return }
-        
+
         isInEditMode = false
-        
-        // 移除编辑视图
-        // Remove editing view
-        imageEditingView?.removeFromSuperview()
-        imageEditingView = nil
-        
-        // 恢复其他UI元素
-        // Restore other UI elements
-        
+
+        webEditorView?.stopLoading()
+        webEditorView?.removeFromSuperview()
+        webEditorView = nil
+
+        editorLoadingIndicator?.stopAnimation(nil)
+        editorLoadingIndicator?.removeFromSuperview()
+        editorLoadingIndicator = nil
+
+        if reloadImage {
+            self.file.ver += 1
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                guard let self = self else { return }
+                getViewController(self)?.changeLargeImage(firstShowThumb: false, resetSize: false, triggeredByLongPress: false, forceRefresh: true)
+            }
+        }
+
+        editDismissHandler?()
+        editDismissHandler = nil
+
         showInfo(NSLocalizedString("Exit Edit Mode", comment: "退出编辑模式"), timeOut: 1.0)
     }
-    
-    /// 获取当前是否处于编辑模式
-    /// Get whether currently in edit mode
+
     var isEditing: Bool {
         return isInEditMode
+    }
+}
+
+// MARK: - WKScriptMessageHandler (Editor Bridge)
+
+extension LargeImageView: WKScriptMessageHandler {
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        switch message.name {
+        case "openFileDialog":
+            showNativeOpenPanel { [weak self] result in
+                guard let self = self, let result = result else { return }
+                DispatchQueue.main.async {
+                    let pathStr = self.jsonString(result.path)
+                    let nameStr = self.jsonString(result.name)
+                    self.webEditorView?.evaluateJavaScript("window.__imageaiFilePicked(\(pathStr), \(nameStr))")
+                }
+            }
+        case "saveFileDialog":
+            let defaultName = message.body as? String ?? "edited_image.png"
+            showNativeSavePanel(defaultName: defaultName) { [weak self] result in
+                guard let self = self else { return }
+                DispatchQueue.main.async {
+                    if let result = result {
+                        self.lastEditorSavePath = result
+                        let pathStr = self.jsonString(result)
+                        self.webEditorView?.evaluateJavaScript("window.__imageaiSavePicked(\(pathStr))")
+                    } else {
+                        self.lastEditorSavePath = nil
+                        self.webEditorView?.evaluateJavaScript("window.__imageaiSavePicked(null)")
+                    }
+                }
+            }
+        case "readClipboard":
+            readClipboardImage { [weak self] result in
+                guard let self = self else { return }
+                DispatchQueue.main.async {
+                    if let result = result {
+                        let pathStr = self.jsonString(result.path)
+                        let js = """
+                        (function() {
+                            var p = \(pathStr);
+                            var d = document.getElementById('open-dialog');
+                            if (d) {
+                                d.remove();
+                                var cb = window.__imageaiPasteCallback;
+                                if (cb) {
+                                    var x = new XMLHttpRequest();
+                                    x.open('GET', '/api/v1/image-file?path=' + encodeURIComponent(p), true);
+                                    x.responseType = 'blob';
+                                    x.onload = function() {
+                                        if (x.status !== 200) { alert('粘贴失败: ' + x.statusText); return; }
+                                        var url = URL.createObjectURL(x.response);
+                                        cb({ url: url, path: p });
+                                    };
+                                    x.onerror = function() { alert('粘贴失败: 网络错误'); };
+                                    x.send();
+                                }
+                            } else {
+                                var event = new CustomEvent("imageai:paste-image", { detail: p });
+                                document.dispatchEvent(event);
+                            }
+                        })();
+                        """
+                        self.webEditorView?.evaluateJavaScript(js)
+                    }
+                }
+            }
+        case "writeClipboard":
+            if let body = message.body as? String {
+                writeImageToPasteboard(base64DataUrl: body)
+            }
+        case "closeEditor":
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                let originalPath = self.file.path.replacingOccurrences(of: "file://", with: "").removingPercentEncoding ?? self.file.path
+                let isSaveAs = self.lastEditorSavePath != nil && self.lastEditorSavePath != originalPath
+                self.lastEditorSavePath = nil
+
+                if isSaveAs {
+                    self.showInfo(NSLocalizedString("Saved as new file", comment: "已保存为新文件"), timeOut: 2.0)
+                    let savePath = self.lastEditorSavePath ?? ""
+                    self.lastEditorSavePath = nil
+                    self.exitEditMode(reloadImage: false)
+                    if !savePath.isEmpty {
+                        let fileURL = URL(fileURLWithPath: savePath)
+                        let newFile = FileModel(path: fileURL.absoluteString, ver: 1)
+                        newFile.ext = fileURL.pathExtension.lowercased()
+                        newFile.type = .image
+                        self.file = newFile
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                            guard let self = self else { return }
+                            getViewController(self)?.changeLargeImage(firstShowThumb: true, resetSize: true, triggeredByLongPress: false, forceRefresh: true)
+                        }
+                    }
+                } else {
+                    self.showInfo(NSLocalizedString("Image saved", comment: "图片已保存"), timeOut: 2.0)
+                    self.exitEditMode(reloadImage: true)
+                }
+            }
+        default:
+            break
+        }
+    }
+
+    // MARK: - Clipboard Helpers
+
+    private func writeImageToPasteboard(base64DataUrl: String) {
+        guard let commaIndex = base64DataUrl.firstIndex(of: ",") else { return }
+        let base64 = String(base64DataUrl[base64DataUrl.index(after: commaIndex)...])
+        guard let imageData = Data(base64Encoded: base64),
+              let image = NSImage(data: imageData) else { return }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.writeObjects([image])
+    }
+
+    private func readClipboardImage(completion: @escaping ((path: String, name: String)?) -> Void) {
+        let pb = NSPasteboard.general
+        if let urls = pb.readObjects(forClasses: [NSURL.self]) as? [URL],
+           let url = urls.first,
+           let image = NSImage(contentsOf: url) {
+            writeImageToTemp(image, name: url.lastPathComponent, completion: completion)
+            return
+        }
+        if let image = NSImage(pasteboard: pb) {
+            writeImageToTemp(image, name: "clipboard_image.png", completion: completion)
+            return
+        }
+        completion(nil)
+    }
+
+    private func writeImageToTemp(_ image: NSImage, name: String, completion: @escaping ((path: String, name: String)?) -> Void) {
+        guard let tiffData = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData) else {
+            completion(nil)
+            return
+        }
+        let baseName = (name as NSString).deletingPathExtension
+        let ext = (name as NSString).pathExtension.lowercased()
+        let imageExt = ["png", "jpg", "jpeg", "gif", "tiff"].contains(ext) ? ext : "png"
+        let fileName = "\(baseName)_\(Int(Date().timeIntervalSince1970)).\(imageExt)"
+        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+        let usingPNG = imageExt == "png"
+        guard let data = usingPNG
+            ? bitmap.representation(using: .png, properties: [:])
+            : bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.92]) else {
+            completion(nil)
+            return
+        }
+        do {
+            try data.write(to: fileURL)
+            completion((path: fileURL.path, name: fileName))
+        } catch {
+            completion(nil)
+        }
+    }
+
+    private func showNativeSavePanel(defaultName: String, completion: @escaping (String?) -> Void) {
+        let panel = NSSavePanel()
+        panel.title = NSLocalizedString("Save Image", comment: "保存图片")
+        panel.nameFieldStringValue = defaultName
+        panel.allowedContentTypes = [.png, .jpeg]
+        if let dir = URL(string: file.path)?.deletingLastPathComponent() {
+            panel.directoryURL = dir
+        }
+        guard let window = self.window else {
+            completion(nil)
+            return
+        }
+        panel.beginSheetModal(for: window) { response in
+            guard response == .OK, let url = panel.url else {
+                completion(nil)
+                return
+            }
+            completion(url.path)
+        }
+    }
+
+    private func showNativeOpenPanel(completion: @escaping ((path: String, name: String)?) -> Void) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.image]
+        guard let window = self.window else {
+            completion(nil)
+            return
+        }
+        panel.beginSheetModal(for: window) { response in
+            guard response == .OK, let url = panel.url else {
+                completion(nil)
+                return
+            }
+            completion((path: url.path, name: url.lastPathComponent))
+        }
+    }
+
+    private func jsonString(_ value: String) -> String {
+        let data = value.data(using: .utf8)
+        let escaped = data?.reduce(into: "") { result, byte in
+            switch byte {
+            case 0..<32:
+                result += "\\u" + String(format: "%04x", byte)
+            case 34:  result += "\\\""
+            case 92:  result += "\\\\"
+            case 10:  result += "\\n"
+            case 13:  result += "\\r"
+            case 9:   result += "\\t"
+            default:
+                if byte < 128 {
+                    result += String(UnicodeScalar(byte))
+                } else {
+                    result += "\\u" + String(format: "%04x", byte)
+                }
+            }
+        } ?? "\"\""
+        return "\"" + escaped + "\""
+    }
+}
+
+// MARK: - WKNavigationDelegate
+
+extension LargeImageView: WKNavigationDelegate {
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        editorLoadingIndicator?.stopAnimation(nil)
+        editorLoadingIndicator?.removeFromSuperview()
+        editorLoadingIndicator = nil
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        editorLoadingIndicator?.stopAnimation(nil)
+        editorLoadingIndicator?.removeFromSuperview()
+        editorLoadingIndicator = nil
+        if (error as NSError).domain == NSURLErrorDomain && (error as NSError).code == NSURLErrorCannotConnectToHost {
+            showInfo(NSLocalizedString("Editor server not ready. Please enable AI Search in Settings.", comment: "编辑器服务未就绪"), timeOut: 3.0)
+        } else {
+            showInfo(NSLocalizedString("Failed to load editor", comment: "加载编辑器失败"), timeOut: 3.0)
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        editorLoadingIndicator?.stopAnimation(nil)
+        editorLoadingIndicator?.removeFromSuperview()
+        editorLoadingIndicator = nil
     }
 }
 

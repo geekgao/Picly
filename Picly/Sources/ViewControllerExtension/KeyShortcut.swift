@@ -372,14 +372,20 @@ extension ViewController {
                 }
             }
 
-            // 检查按键是否是 Command+Shift+"E" 键
-            // Check if key is Command+Shift+"E"
-            if characters == "e" && isCommandPressed && !isAltPressed && !isCtrlPressed && isShiftPressed && EDIT_FEATURE_ENABLED {
+            // 检查按键是否是 Command+E 键 (编辑模式)
+            if characters == "e" && isCommandPressed && !isAltPressed && !isCtrlPressed && !isShiftPressed {
                 if publicVar.isInLargeView{
-                    largeImageView.enterEditMode(){ editedImage in
-                        // editedImage 是编辑完成后的图片
-                        self.largeImageView.imageView.image = editedImage
-                    }
+                    largeImageView.enterEditMode()
+                }
+                return nil
+            }
+
+            // 编辑模式下，←→ 方向键切换前后图片
+            if largeImageView.isInEditMode && (specialKey == .leftArrow || specialKey == .rightArrow) && noModifierKey {
+                if specialKey == .leftArrow {
+                    previousLargeImage()
+                } else {
+                    nextLargeImage()
                 }
                 return nil
             }
@@ -749,7 +755,7 @@ extension ViewController {
             // Check if key is ➡️, ⬇️, PageDown
             let isRTL = view.userInterfaceLayoutDirection == .rightToLeft
             if (specialKey == .rightArrow || specialKey == .downArrow || specialKey == .pageDown || specialKey == .next) && noModifierKey {
-                if publicVar.isInLargeView{
+                if !largeImageView.isInEditMode, publicVar.isInLargeView{
                     if largeImageView.file.type == .video && specialKey == .rightArrow {
                         // RTL: right arrow = backward
                         largeImageView.seekVideo(direction: isRTL ? -1 : 1)
@@ -764,7 +770,7 @@ extension ViewController {
             // 检查按键是否是 ⬅️、⬆️、PageUp 键
             // Check if key is ⬅️, ⬆️, PageUp
             if (specialKey == .leftArrow || specialKey == .upArrow || specialKey == .pageUp || specialKey == .prev) && noModifierKey {
-                if publicVar.isInLargeView{
+                if !largeImageView.isInEditMode, publicVar.isInLargeView{
                     if largeImageView.file.type == .video && specialKey == .leftArrow {
                         // RTL: left arrow = forward
                         largeImageView.seekVideo(direction: isRTL ? 1 : -1)

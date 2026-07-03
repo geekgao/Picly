@@ -320,6 +320,7 @@ extension NSToolbarItem.Identifier {
     static let isColorFilterOn = NSToolbarItem.Identifier("com.example.isColorFilterOn")
     static let isAutoPlayVisibleVideo = NSToolbarItem.Identifier("com.example.isAutoPlayVisibleVideo")
     static let isEnableHDR = NSToolbarItem.Identifier("com.example.isEnableHDR")
+    static let imageEdit = NSToolbarItem.Identifier("com.example.imageEdit")
     static let reverseImageSearch = NSToolbarItem.Identifier("com.example.reverseImageSearch")
     static let faceRecognition = NSToolbarItem.Identifier("com.example.faceRecognition")
 }
@@ -357,6 +358,7 @@ extension WindowController: NSToolbarDelegate {
                 }
                 // identifiers.append(.rotateL)
                 identifiers.append(.rotateR)
+                identifiers.append(.imageEdit)
                 identifiers.append(.showinfo)
             }else{
                 if viewController.publicVar.profile.getValue(forKey: "isWindowTitleUseFullPath") == "true" {
@@ -806,6 +808,15 @@ extension WindowController: NSToolbarDelegate {
             toolbarItem.label = NSLocalizedString("Rotate Clockwise", comment: "顺时针旋转")
             toolbarItem.paletteLabel = NSLocalizedString("Rotate Clockwise", comment: "顺时针旋转")
             toolbarItem.visibilityPriority = .low
+
+        case .imageEdit:
+            let button = NSButton(title: "", image: NSImage(systemSymbolName: "pencil.and.outline", accessibilityDescription: "")!, target: self, action: #selector(imageEditAction(_:)))
+            setButtonStyle(button)
+            button.toolTip = NSLocalizedString("Edit Image", comment: "编辑图片")
+            toolbarItem.view = button
+            toolbarItem.label = NSLocalizedString("Edit Image", comment: "编辑图片")
+            toolbarItem.paletteLabel = NSLocalizedString("Edit Image", comment: "编辑图片")
+            toolbarItem.visibilityPriority = .low
             
         case .zoomIn:
             let button = NSButton(title: "", image: NSImage(systemSymbolName: "plus", accessibilityDescription: "")!, target: self, action: #selector(zoomInAction(_:)))
@@ -1066,6 +1077,12 @@ extension WindowController: NSToolbarDelegate {
     @objc func rotateRAction(_ sender: Any?) {
         if let viewController = contentViewController as? ViewController {
             viewController.largeImageView.actRotateR()
+        }
+    }
+
+    @objc func imageEditAction(_ sender: Any?) {
+        if let viewController = contentViewController as? ViewController {
+            viewController.largeImageView.enterEditMode()
         }
     }
     

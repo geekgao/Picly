@@ -2,10 +2,11 @@ import Foundation
 
 actor ImageAIService {
     static let shared = ImageAIService()
+    static let defaultPort: UInt16 = 8972
 
     private var process: Process?
     private var monitorTask: Task<Void, Never>?
-    private let port: UInt16 = 8972
+    private let port: UInt16 = defaultPort
     private let session: URLSession
     private var isStartInProgress = false
 

@@ -6,6 +6,7 @@
     return {
       path: p.get("path") || "",
       save: p.get("save") || "overwrite",
+      embedded: p.get("embedded") || "",
     };
   }
 
@@ -300,6 +301,24 @@
 
         try {
           const defaultName = getImageFileName(imagePath) || "edited_image";
+
+          if (params.embedded && window.webkit && window.webkit.messageHandlers) {
+            const savePath = await new Promise(function (resolve) {
+              window.__imageaiSaveCallback = resolve;
+              window.webkit.messageHandlers.saveFileDialog.postMessage(defaultName);
+            });
+            if (savePath) {
+              await saveImage(savePath, dataUrl, "save-as");
+              window.webkit.messageHandlers.closeEditor.postMessage("");
+            }
+            return;
+          }
+
+          if (params.save === "overwrite" && imagePath) {
+            await saveImage(imagePath, dataUrl, "overwrite");
+            return;
+          }
+
           const dot = defaultName.lastIndexOf(".");
           const base = dot > 0 ? defaultName.substring(0, dot) : defaultName;
           const ext = dot > 0 ? defaultName.substring(dot) : ".png";
@@ -372,6 +391,10 @@
 
     function makeOnClose() {
       return async function () {
+        if (params.embedded && window.webkit && window.webkit.messageHandlers) {
+          window.webkit.messageHandlers.closeEditor.postMessage("");
+          return;
+        }
         if (window.__imageaiCurrentEditor) {
           window.__imageaiCurrentEditor.terminate();
         }

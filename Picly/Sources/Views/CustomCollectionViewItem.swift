@@ -1206,6 +1206,8 @@ class CustomCollectionViewItem: NSCollectionViewItem {
                 if selectedCount == 1 && file.type == .image {
                     menu.addItem(NSMenuItem.separator())
 
+                    let actionItemEditImage = menu.addItem(withTitle: NSLocalizedString("Edit Image...", comment: "编辑图片..."), action: #selector(actEditImage), keyEquivalent: "")
+
                     let actionItemWallpaper = menu.addItem(withTitle: NSLocalizedString("Set as Wallpaper", comment: "设置为壁纸"), action: #selector(actSetAsWallpaper), keyEquivalent: "")
 
                     let actionItemConvert = menu.addItem(withTitle: NSLocalizedString("Convert Image...", comment: "转换格式..."), action: #selector(actConvertImage), keyEquivalent: "")
@@ -1297,7 +1299,17 @@ class CustomCollectionViewItem: NSCollectionViewItem {
         guard let viewController = getViewController(collectionView) else { return }
         viewController.handleUserRefresh()
     }
-    
+
+    @objc func actEditImage() {
+        guard let collectionView = collectionView,
+              let indexPath = collectionView.indexPath(for: self),
+              let viewController = getViewController(collectionView) else { return }
+        viewController.openLargeImageFromIndexPath(indexPath)
+        DispatchQueue.main.async {
+            viewController.largeImageView.enterEditMode()
+        }
+    }
+
     @objc func actOpen() {
         if let collectionView = collectionView,
            let indexPath=collectionView.indexPath(for: self){

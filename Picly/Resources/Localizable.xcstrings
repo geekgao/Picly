@@ -45354,6 +45354,176 @@
         }
       }
     },
+    "Edit Image...": {
+      "comment": "编辑图片...",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Edit Image..."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "new",
+            "value": "编辑图片..."
+          }
+        }
+      }
+    },
+    "Edit Mode": {
+      "comment": "编辑模式",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Edit Mode"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "new",
+            "value": "编辑模式"
+          }
+        }
+      }
+    },
+    "Editor server not ready. Please enable AI Search in Settings.": {
+      "comment": "编辑器服务未就绪",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Editor server not ready. Check AI Search in Settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "new",
+            "value": "编辑器服务未就绪，请在设置中启用AI搜索"
+          }
+        }
+      }
+    },
+    "Edit Image": {
+      "comment": "编辑图片（工具栏提示）",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Edit Image"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "new",
+            "value": "编辑图片"
+          }
+        }
+      }
+    },
+    "Exit Edit Mode": {
+      "comment": "退出编辑模式",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Exit Edit Mode"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "new",
+            "value": "退出编辑模式"
+          }
+        }
+      }
+    },
+    "Failed to load editor": {
+      "comment": "加载编辑器失败",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Failed to load editor"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "new",
+            "value": "加载编辑器失败"
+          }
+        }
+      }
+    },
+    "Image saved": {
+      "comment": "图片已保存",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Image saved"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "new",
+            "value": "图片已保存"
+          }
+        }
+      }
+    },
+    "Only images can be edited": {
+      "comment": "只有图片才能编辑",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Only images can be edited"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "new",
+            "value": "只有图片才能编辑"
+          }
+        }
+      }
+    },
+    "Save Image": {
+      "comment": "保存图片",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Save Image"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "new",
+            "value": "保存图片"
+          }
+        }
+      }
+    },
+    "Saved as new file": {
+      "comment": "已保存为新文件",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Saved as new file"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "new",
+            "value": "已保存为新文件"
+          }
+        }
+      }
+    },
     "convert-image-fail": {
       "comment": "图片转换失败",
       "localizations": {
