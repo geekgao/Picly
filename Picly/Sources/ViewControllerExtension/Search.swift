@@ -412,7 +412,7 @@ extension ViewController {
                 self.startIndeterminate()
             }
             do {
-                let results = try await ImageAIService.shared.searchByColor(colors: searchColorPickedColors, tolerance: 0.15, topK: 500)
+                let results = try await ImageAIService.shared.searchByColor(colors: searchColorPickedColors, tolerance: 0.12, topK: 500)
                 guard !Task.isCancelled else { return }
                 let allPaths = results.compactMap { URL(fileURLWithPath: $0.image.path).absoluteString }
                 let folderPrefix = fileDB.curFolder.hasSuffix("/") ? fileDB.curFolder : fileDB.curFolder + "/"

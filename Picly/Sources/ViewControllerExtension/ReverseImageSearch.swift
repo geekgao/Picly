@@ -10,7 +10,7 @@ extension ViewController {
         overlay.wantsLayer = true
         overlay.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.0).cgColor
 
-        let panelWidth: CGFloat = 400
+        let panelWidth: CGFloat = 500
         let panelHeight: CGFloat = 320
         let panelX = (view.bounds.width - panelWidth) / 2
         let panelY = view.bounds.height - panelHeight - 60

@@ -1209,6 +1209,8 @@ class CustomCollectionViewItem: NSCollectionViewItem {
                     let actionItemWallpaper = menu.addItem(withTitle: NSLocalizedString("Set as Wallpaper", comment: "设置为壁纸"), action: #selector(actSetAsWallpaper), keyEquivalent: "")
 
                     let actionItemConvert = menu.addItem(withTitle: NSLocalizedString("Convert Image...", comment: "转换格式..."), action: #selector(actConvertImage), keyEquivalent: "")
+
+                    let actionItemReverseImageSearch = menu.addItem(withTitle: NSLocalizedString("Search Similar Images...", comment: "以图搜图..."), action: #selector(actReverseImageSearch), keyEquivalent: "")
                 }
 
                 menu.addItem(NSMenuItem.separator())
@@ -1473,6 +1475,11 @@ class CustomCollectionViewItem: NSCollectionViewItem {
     @objc func actConvertImage() {
         guard let viewController = getViewController(collectionView) else { return }
         viewController.handleConvertImage()
+    }
+
+    @objc func actReverseImageSearch() {
+        guard let viewController = getViewController(collectionView) else { return }
+        viewController.reverseImageSearchFromSelected()
     }
 
     @objc func actDelete() {
