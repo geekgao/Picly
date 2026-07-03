@@ -128,9 +128,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         if let isFirstTimeUse = UserDefaults.standard.value(forKey: "isFirstTimeUse") as? Bool {
             globalVar.isFirstTimeUse = isFirstTimeUse
         }
-        if let terminateAfterLastWindowClosed = UserDefaults.standard.value(forKey: "terminateAfterLastWindowClosed") as? Bool {
-            globalVar.terminateAfterLastWindowClosed = terminateAfterLastWindowClosed
-        }
         if let autoHideToolbar = UserDefaults.standard.value(forKey: "autoHideToolbar") as? Bool {
             globalVar.autoHideToolbar = autoHideToolbar
         }

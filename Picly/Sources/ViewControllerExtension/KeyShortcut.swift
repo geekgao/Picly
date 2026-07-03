@@ -490,9 +490,9 @@ extension ViewController {
                 }
             }
             
-            // 检查按键是否是 Esc 键
-            // Check if key is Esc
-            if event.keyCode == 53 {
+            // 检查按键是否是 Cmd+W 或 Esc 键
+            // Check if key is Cmd+W or Esc
+            if (isOnlyCommandPressed && characters == "w") || event.keyCode == 53 {
                 if publicVar.isInLargeView{
                     closeLargeImage(0)
                     return nil

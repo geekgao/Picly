@@ -68,7 +68,6 @@ class GlobalVar{
         return pow(2.0, (scrollSensitivity - 5.0) / 2.0)
     }
     var scrollSensitivity: Double = 5.0
-    var terminateAfterLastWindowClosed = true
     var autoHideToolbar = false
     var autoHideCursorWhenFullscreen = false
     var doNotUseFFmpeg = false

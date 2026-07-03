@@ -15,7 +15,6 @@ final class GeneralSettingsViewController: NSViewController, SettingsPane {
 
     @IBOutlet weak var scrollSensitivitySlider: NSSlider!
     
-    @IBOutlet weak var terminateAfterLastWindowClosedCheckbox: NSButton!
     @IBOutlet weak var autoHideToolbarCheckbox: NSButton!
     @IBOutlet weak var autoHideCursorWhenFullscreenCheckbox: NSButton!
     @IBOutlet weak var collectionViewItemShowTooltipCheckbox: NSButton!
@@ -36,7 +35,6 @@ final class GeneralSettingsViewController: NSViewController, SettingsPane {
         // Initialize scrollSensitivitySlider and labels
         scrollSensitivitySlider.doubleValue = globalVar.scrollSensitivity
         
-        terminateAfterLastWindowClosedCheckbox.state = globalVar.terminateAfterLastWindowClosed ? .on : .off
         autoHideToolbarCheckbox.state = globalVar.autoHideToolbar ? .on : .off
         autoHideCursorWhenFullscreenCheckbox.state = globalVar.autoHideCursorWhenFullscreen ? .on : .off
         collectionViewItemShowTooltipCheckbox.state = globalVar.collectionViewItemShowTooltip ? .on : .off
@@ -150,11 +148,6 @@ final class GeneralSettingsViewController: NSViewController, SettingsPane {
         default:
             break
         }
-    }
-    
-    @IBAction func terminateAfterLastWindowClosedToggled(_ sender: NSButton) {
-        globalVar.terminateAfterLastWindowClosed = (sender.state == .on)
-        UserDefaults.standard.set(globalVar.terminateAfterLastWindowClosed, forKey: "terminateAfterLastWindowClosed")
     }
     
     @IBAction func autoHideToolbarToggled(_ sender: NSButton) {

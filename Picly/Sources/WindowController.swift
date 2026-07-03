@@ -114,13 +114,6 @@ class WindowController: NSWindowController, NSWindowDelegate {
         
         globalVar.windowNum -= 1
         log("Window closed, remain: " + String(globalVar.windowNum))
-        if globalVar.windowNum == 0 && globalVar.terminateAfterLastWindowClosed {
-            // 不这样会导致windowWillClose被调用两遍
-            // Not doing this will cause windowWillClose to be called twice
-            DispatchQueue.main.async {
-                NSApplication.shared.terminate(nil)
-            }
-        }
     }
     
     func windowDidBecomeKey(_ notification: Notification) {

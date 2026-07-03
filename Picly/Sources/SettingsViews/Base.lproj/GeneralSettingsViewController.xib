@@ -17,7 +17,6 @@
                 <outlet property="radioHomeFolder" destination="Eeu-lU-58j" id="Ogg-qa-Rjo"/>
                 <outlet property="radioLastFolder" destination="iSw-Jo-JME" id="Tyo-xe-0kn"/>
                 <outlet property="scrollSensitivitySlider" destination="ZfP-7k-XS3" id="9UE-K5-aWi"/>
-                <outlet property="terminateAfterLastWindowClosedCheckbox" destination="eIh-jy-wRw" id="KSJ-M6-Apr"/>
                 <outlet property="view" destination="c22-O7-iKe" id="ZQe-UH-LCX"/>
             </connections>
         </customObject>
@@ -36,7 +35,6 @@
                         <gridRow id="6s8-bz-Bj9"/>
                         <gridRow id="uLO-pI-Rng"/>
                         <gridRow id="DqQ-B1-rBX"/>
-                        <gridRow id="qRQ-wQ-p0q"/>
                         <gridRow id="1jQ-pG-rHu"/>
                         <gridRow id="V0Z-tx-5vQ"/>
                         <gridRow id="hB1-BQ-zjj"/>
@@ -129,28 +127,7 @@ Restart the application for changes to take effect.</string>
                                 </textFieldCell>
                             </textField>
                         </gridCell>
-                        <gridCell row="qRQ-wQ-p0q" column="GGj-JC-w4E" id="d9c-ug-roI">
-                            <textField key="contentView" focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="Vt6-jC-8Jo">
-                                <rect key="frame" x="8" y="444" width="99" height="16"/>
-                                <textFieldCell key="cell" alignment="right" title="Close Behavior:" id="uKy-ok-dDi">
-                                    <font key="font" usesAppearanceFont="YES"/>
-                                    <color key="textColor" name="labelColor" catalog="System" colorSpace="catalog"/>
-                                    <color key="backgroundColor" name="textBackgroundColor" catalog="System" colorSpace="catalog"/>
-                                </textFieldCell>
-                            </textField>
-                        </gridCell>
-                        <gridCell row="qRQ-wQ-p0q" column="cs9-fm-l2F" id="eWu-0F-cb3">
-                            <button key="contentView" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="eIh-jy-wRw">
-                                <rect key="frame" x="113" y="443" width="292" height="18"/>
-                                <buttonCell key="cell" type="check" title="Quit Application When Closing Last Window" bezelStyle="regularSquare" imagePosition="left" state="on" inset="2" id="dB2-6s-xY8">
-                                    <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
-                                    <font key="font" metaFont="system"/>
-                                </buttonCell>
-                                <connections>
-                                    <action selector="terminateAfterLastWindowClosedToggled:" target="-2" id="F1R-NP-6wj"/>
-                                </connections>
-                            </button>
-                        </gridCell>
+
                         <gridCell row="1jQ-pG-rHu" column="GGj-JC-w4E" id="G4b-NZ-M4j">
                             <textField key="contentView" focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="4Y9-mV-mhX">
                                 <rect key="frame" x="10" y="413" width="97" height="16"/>
