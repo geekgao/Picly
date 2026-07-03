@@ -7,6 +7,7 @@ import Foundation
 import Cocoa
 import AVFoundation
 import DiskArbitration
+import BTree
 
 extension ViewController {
     
@@ -152,36 +153,106 @@ extension ViewController {
         refreshAll(needLoadThumbPriority: true)
     }
     
+    func applyFileTypeFilterChange(isEnabling: Bool) {
+        fileDB.lock()
+        guard let dirModel = fileDB.db[SortKeyDir(fileDB.curFolder)] else {
+            fileDB.unlock()
+            return
+        }
+        let allTypesShown = publicVar.isShowAllTypeFile || (publicVar.isShowImageFile && publicVar.isShowVideoFile && publicVar.isShowRawFile)
+        
+        if let allFiles = dirModel.fileTypeAllFiles {
+            dirModel.files = buildFilteredMap(from: allFiles)
+            dirModel.layoutCalcPos = 0
+            dirModel.lastLayoutCalcPosUsed = 0
+            dirModel.keepScrollPos = false
+            if allTypesShown {
+                dirModel.fileTypeAllFiles = nil
+            }
+            fileDB.ver += 1
+            dirModel.ver = fileDB.ver
+            let curFolder = fileDB.curFolder
+            fileDB.unlock()
+            switchFolder(path: curFolder)
+        } else if !isEnabling {
+            dirModel.fileTypeAllFiles = dirModel.files
+            dirModel.files = buildFilteredMap(from: dirModel.files)
+            dirModel.layoutCalcPos = 0
+            dirModel.lastLayoutCalcPosUsed = 0
+            dirModel.keepScrollPos = false
+            fileDB.ver += 1
+            dirModel.ver = fileDB.ver
+            let curFolder = fileDB.curFolder
+            fileDB.unlock()
+            switchFolder(path: curFolder)
+        } else {
+            fileDB.unlock()
+            dirURLCache.removeAll()
+            if let folderURL = URL(string: fileDB.curFolder) {
+                DirMetadataCache.shared.removeCache(for: folderURL)
+            }
+            refreshCollectionView(needLoadThumbPriority: true)
+        }
+    }
+    
+    func buildFilteredMap(from files: Map<SortKeyFile, FileModel>) -> Map<SortKeyFile, FileModel> {
+        if publicVar.isShowAllTypeFile {
+            var newId = 0
+            for (_, file) in files {
+                file.id = newId
+                newId += 1
+            }
+            return files
+        }
+        var filteredEntries: [(SortKeyFile, FileModel)] = []
+        filteredEntries.reserveCapacity(files.count)
+        var newId = 0
+        for (key, file) in files {
+            let ext = URL(string: file.path)?.pathExtension.lowercased() ?? ""
+            if publicVar.HandledFileExtensions.contains(ext) {
+                file.id = newId
+                newId += 1
+                filteredEntries.append((key, file))
+            }
+        }
+        return Map<SortKeyFile, FileModel>(sortedElements: filteredEntries)
+    }
+    
     func toggleIsShowAllTypeFile(){
+        let isEnabling = !publicVar.isShowAllTypeFile
         publicVar.isShowAllTypeFile.toggle()
         UserDefaults.standard.set(publicVar.isShowAllTypeFile, forKey: "isShowAllTypeFile")
+        publicVar.setFileExtensions()
         var showText = NSLocalizedString("Not Show All Types of Files", comment: "不显示所有类型文件")
         if publicVar.isShowAllTypeFile {
             showText = NSLocalizedString("Show All Types of Files", comment: "显示所有类型文件")
         }
         coreAreaView.showInfo(showText, timeOut: 1.0, cannotBeCleard: true)
-        refreshAll(needLoadThumbPriority: true)
+        applyFileTypeFilterChange(isEnabling: isEnabling)
     }
     
     func toggleIsShowImageFile(){
+        let isEnabling = !publicVar.isShowImageFile
         publicVar.isShowImageFile.toggle()
         UserDefaults.standard.set(publicVar.isShowImageFile, forKey: "isShowImageFile")
         publicVar.setFileExtensions()
-        refreshCollectionView(needLoadThumbPriority: true)
+        applyFileTypeFilterChange(isEnabling: isEnabling)
     }
     
     func toggleIsShowRawFile(){
+        let isEnabling = !publicVar.isShowRawFile
         publicVar.isShowRawFile.toggle()
         UserDefaults.standard.set(publicVar.isShowRawFile, forKey: "isShowRawFile")
         publicVar.setFileExtensions()
-        refreshCollectionView(needLoadThumbPriority: true)
+        applyFileTypeFilterChange(isEnabling: isEnabling)
     }
     
     func toggleIsShowVideoFile(){
+        let isEnabling = !publicVar.isShowVideoFile
         publicVar.isShowVideoFile.toggle()
         UserDefaults.standard.set(publicVar.isShowVideoFile, forKey: "isShowVideoFile")
         publicVar.setFileExtensions()
-        refreshCollectionView(needLoadThumbPriority: true)
+        applyFileTypeFilterChange(isEnabling: isEnabling)
     }
 
     func togglePanWhenZoomed(){
