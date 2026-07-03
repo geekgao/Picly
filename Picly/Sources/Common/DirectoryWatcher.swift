@@ -10,6 +10,7 @@ actor DirectoryWatcher {
     private var debounceTask: Task<Void, Never>?
     private let debounceInterval: TimeInterval = 3.0
     private let imageAI = ImageAIService.shared
+    private let faceIndexer = FaceIndexingManager.shared
 
     private let supportedExts: Set<String> = [
         "jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp", "heic", "heif"
@@ -108,6 +109,8 @@ actor DirectoryWatcher {
                 } catch {
                     log("DirectoryWatcher: index failed \(path): \(error.localizedDescription)")
                 }
+                // Also index faces
+                await faceIndexer.indexPhoto(path)
             } else if !exists {
                 do {
                     try await imageAI.deleteImage(path: path)
@@ -115,6 +118,7 @@ actor DirectoryWatcher {
                 } catch {
                     log("DirectoryWatcher: delete failed \(path): \(error.localizedDescription)")
                 }
+                await faceIndexer.removePhoto(path)
             }
         }
     }

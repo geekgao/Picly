@@ -497,6 +497,8 @@ class ViewController: NSViewController, NSSplitViewDelegate, NSSearchFieldDelega
     var reverseImagePreview: NSImageView?
     var reverseImageStatusLabel: NSTextField?
     var reverseImageSearchTask: Task<Void, Never>?
+    var personBrowserOverlay: NSView?
+    var personBrowserVC: PersonBrowserViewController?
     var reverseImageChooseButton: NSButton?
     
     override func viewDidLoad() {

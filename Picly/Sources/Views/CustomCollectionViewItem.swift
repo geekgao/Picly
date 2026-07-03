@@ -1211,6 +1211,8 @@ class CustomCollectionViewItem: NSCollectionViewItem {
                     let actionItemConvert = menu.addItem(withTitle: NSLocalizedString("Convert Image...", comment: "转换格式..."), action: #selector(actConvertImage), keyEquivalent: "")
 
                     let actionItemReverseImageSearch = menu.addItem(withTitle: NSLocalizedString("Search Similar Images...", comment: "以图搜图..."), action: #selector(actReverseImageSearch), keyEquivalent: "")
+
+                    let actionItemFaceSearch = menu.addItem(withTitle: NSLocalizedString("Search Faces...", comment: "搜索人脸..."), action: #selector(actFaceSearch), keyEquivalent: "")
                 }
 
                 menu.addItem(NSMenuItem.separator())
@@ -1480,6 +1482,11 @@ class CustomCollectionViewItem: NSCollectionViewItem {
     @objc func actReverseImageSearch() {
         guard let viewController = getViewController(collectionView) else { return }
         viewController.reverseImageSearchFromSelected()
+    }
+
+    @objc func actFaceSearch() {
+        guard let viewController = getViewController(collectionView) else { return }
+        viewController.searchFacesInImage(nil)
     }
 
     @objc func actDelete() {

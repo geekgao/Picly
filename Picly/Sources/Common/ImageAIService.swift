@@ -144,7 +144,7 @@ actor ImageAIService {
         return false
     }
 
-    private func ensureRunning() async throws {
+    func ensureRunning() async throws {
         if isRunning, await pollServerReady() { return }
         // Check if an external server is already listening on the port
         if await pollServerReady() { return }

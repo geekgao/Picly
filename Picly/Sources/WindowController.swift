@@ -321,6 +321,7 @@ extension NSToolbarItem.Identifier {
     static let isAutoPlayVisibleVideo = NSToolbarItem.Identifier("com.example.isAutoPlayVisibleVideo")
     static let isEnableHDR = NSToolbarItem.Identifier("com.example.isEnableHDR")
     static let reverseImageSearch = NSToolbarItem.Identifier("com.example.reverseImageSearch")
+    static let faceRecognition = NSToolbarItem.Identifier("com.example.faceRecognition")
 }
 
 extension WindowController: NSToolbarDelegate {
@@ -386,6 +387,7 @@ extension WindowController: NSToolbarDelegate {
                 identifiers.append(.tagging)
                 if globalVar.imageAIEnabled {
                     identifiers.append(.reverseImageSearch)
+                    identifiers.append(.faceRecognition)
                 }
                 identifiers.append(.viewToggle)
                 identifiers.append(.thumbSize)
@@ -706,6 +708,21 @@ extension WindowController: NSToolbarDelegate {
             toolbarItem.view = button
             toolbarItem.label = NSLocalizedString("Search by Image", comment: "以图搜图")
             toolbarItem.paletteLabel = NSLocalizedString("Search by Image", comment: "以图搜图")
+            toolbarItem.visibilityPriority = .low
+
+        case .faceRecognition:
+            let image = NSImage(systemSymbolName: "person.crop.circle.badge.magnifyingglass", accessibilityDescription: nil)
+                ?? NSImage(systemSymbolName: "person.crop.circle", accessibilityDescription: nil)
+                ?? NSImage(systemSymbolName: "face.smiling", accessibilityDescription: nil)
+                ?? NSImage()
+            let button = NSButton(title: "", image: image, target: self, action: #selector(faceRecognitionAction(_:)))
+            setButtonStyle(button)
+            button.setButtonType(.momentaryPushIn)
+            button.contentTintColor = nil
+            button.toolTip = NSLocalizedString("Face Search", comment: "人脸搜索")
+            toolbarItem.view = button
+            toolbarItem.label = NSLocalizedString("Face Search", comment: "人脸搜索")
+            toolbarItem.paletteLabel = NSLocalizedString("Face Search", comment: "人脸搜索")
             toolbarItem.visibilityPriority = .low
 
         case .viewToggle:
@@ -2098,5 +2115,10 @@ extension WindowController: NSToolbarDelegate {
         } else {
             viewController.showReverseImageSearchOverlay()
         }
+    }
+
+    @objc func faceRecognitionAction(_ sender: Any?) {
+        guard let viewController = contentViewController as? ViewController else { return }
+        viewController.showPersonBrowser()
     }
 }

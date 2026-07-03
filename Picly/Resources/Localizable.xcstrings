@@ -45817,6 +45817,652 @@
           }
         }
       }
+    },
+    "%d photos · %d faces": {
+      "comment": "%d 张照片 · %d 张人脸",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%d photos · %d faces"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d 张照片 · %d 张人脸"
+          }
+        }
+      }
+    },
+    "%d photos": {
+      "comment": "照片数",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%d photos"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d 张照片"
+          }
+        }
+      }
+    },
+    "AI features are disabled": {
+      "comment": "AI 功能已禁用",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "AI features are disabled"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 功能已禁用"
+          }
+        }
+      }
+    },
+    "AI Features Disabled": {
+      "comment": "AI 功能未开启",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "AI Features Disabled"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 功能未开启"
+          }
+        }
+      }
+    },
+    "Detecting faces...": {
+      "comment": "检测人脸...",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Detecting faces..."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检测人脸..."
+          }
+        }
+      }
+    },
+    "e.g. Mom, John": {
+      "comment": "如：妈妈、小明",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "e.g. Mom, John"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "如：妈妈、小明"
+          }
+        }
+      }
+    },
+    "Enable AI features in Settings to use face recognition.": {
+      "comment": "在设置中开启 AI 功能以使用人脸识别",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Enable AI features in Settings to use face recognition."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在设置中开启 AI 功能以使用人脸识别"
+          }
+        }
+      }
+    },
+    "Enter a name for this person:": {
+      "comment": "为此人物输入名称：",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Enter a name for this person:"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为此人物输入名称："
+          }
+        }
+      }
+    },
+    "Face Action": {
+      "comment": "人脸操作",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Face Action"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "人脸操作"
+          }
+        }
+      }
+    },
+    "Face indexing complete": {
+      "comment": "人脸索引完成",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Face indexing complete"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "人脸索引完成"
+          }
+        }
+      }
+    },
+    "Faces: %d/%d": {
+      "comment": "人脸索引进度",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Faces: %d/%d"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "人脸: %d/%d"
+          }
+        }
+      }
+    },
+    "Failed to load photos": {
+      "comment": "加载照片失败",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Failed to load photos"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加载照片失败"
+          }
+        }
+      }
+    },
+    "Failed to load": {
+      "comment": "加载失败",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Failed to load"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加载失败"
+          }
+        }
+      }
+    },
+    "Find More Photos": {
+      "comment": "查找更多照片",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Find More Photos"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查找更多照片"
+          }
+        }
+      }
+    },
+    "Found %ld matching photos": {
+      "comment": "找到 %ld 张匹配照片",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Found %ld matching photos"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "找到 %ld 张匹配照片"
+          }
+        }
+      }
+    },
+    "Index faces in current folder": {
+      "comment": "索引当前文件夹人脸",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Index faces in current folder"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "索引当前文件夹人脸"
+          }
+        }
+      }
+    },
+    "Indexing %d faces...": {
+      "comment": "索引 %d 张人脸中",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Indexing %d faces..."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "索引 %d 张人脸中"
+          }
+        }
+      }
+    },
+    "Loading people...": {
+      "comment": "加载人物...",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Loading people..."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加载人物..."
+          }
+        }
+      }
+    },
+    "Merge into Person...": {
+      "comment": "合并到已有分组...",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Merge into Person..."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "合并到已有分组..."
+          }
+        }
+      }
+    },
+    "Merge into:": {
+      "comment": "合并到：",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Merge into:"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "合并到："
+          }
+        }
+      }
+    },
+    "Merge into...": {
+      "comment": "合并到...",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Merge into..."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "合并到..."
+          }
+        }
+      }
+    },
+    "No faces detected": {
+      "comment": "未检测到人脸",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "No faces detected"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未检测到人脸"
+          }
+        }
+      }
+    },
+    "No matching photos found": {
+      "comment": "未找到匹配照片",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "No matching photos found"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未找到匹配照片"
+          }
+        }
+      }
+    },
+    "No other persons": {
+      "comment": "没有其他人物",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "No other persons"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有其他人物"
+          }
+        }
+      }
+    },
+    "No people found": {
+      "comment": "未找到人物",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "No people found"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未找到人物"
+          }
+        }
+      }
+    },
+    "People": {
+      "comment": "人物",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "People"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "人物"
+          }
+        }
+      }
+    },
+    "Rename Person": {
+      "comment": "重命名人物",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Rename Person"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名人物"
+          }
+        }
+      }
+    },
+    "Rename...": {
+      "comment": "重命名...",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Rename..."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名..."
+          }
+        }
+      }
+    },
+    "Search Faces...": {
+      "comment": "搜索人脸...",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Search Faces..."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索人脸..."
+          }
+        }
+      }
+    },
+    "Search Faces": {
+      "comment": "搜索人脸",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Search Faces"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索人脸"
+          }
+        }
+      }
+    },
+    "There are no other persons to merge into.": {
+      "comment": "没有其他人物可合并。",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "There are no other persons to merge into."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有其他人物可合并。"
+          }
+        }
+      }
+    },
+    "Unknown": {
+      "comment": "未知",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Unknown"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未知"
+          }
+        }
+      }
+    },
+    "What would you like to do?": {
+      "comment": "你想要做什么？",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "What would you like to do?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你想要做什么？"
+          }
+        }
+      }
+    },
+    "Show Face Overlay": {
+      "comment": "显示人脸框",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Show Face Overlay"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示人脸框"
+          }
+        }
+      }
+    },
+    "Not this person": {
+      "comment": "不是此人",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Not this person"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不是此人"
+          }
+        }
+      }
+    },
+    "Show Photos": {
+      "comment": "查看照片",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Show Photos"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看照片"
+          }
+        }
+      }
+    },
+    "Reindex": {
+      "comment": "重新索引",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Reindex"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新索引"
+          }
+        }
+      }
+    },
+    "Face Search": {
+      "comment": "人脸搜索",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Face Search"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "人脸搜索"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

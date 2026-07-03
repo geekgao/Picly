@@ -298,6 +298,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         
         Task {
             await ImageAIService.shared.startIfEnabled()
+            // Preload face encoder model (lazy, non-blocking)
+            if globalVar.imageAIEnabled {
+                try? await ImageAIService.shared.preload()
+            }
         }
         
         log("End applicationDidFinishLaunching")

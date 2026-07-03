@@ -1948,6 +1948,8 @@ class LargeImageView: NSView {
                 let actionItemConvert = menu.addItem(withTitle: NSLocalizedString("Convert Image...", comment: "转换格式..."), action: #selector(actConvertImage), keyEquivalent: "")
 
                 let actionItemReverseImageSearch = menu.addItem(withTitle: NSLocalizedString("Search Similar Images...", comment: "以图搜图..."), action: #selector(actReverseImageSearch), keyEquivalent: "")
+
+                let actionItemFaceSearch = menu.addItem(withTitle: NSLocalizedString("Search Faces...", comment: "搜索人脸..."), action: #selector(actFaceSearch), keyEquivalent: "")
             }
             
             menu.addItem(NSMenuItem.separator())
@@ -2178,6 +2180,10 @@ class LargeImageView: NSView {
 
     @objc func actReverseImageSearch() {
         getViewController(self)?.reverseImageSearchFromSelected()
+    }
+
+    @objc func actFaceSearch() {
+        getViewController(self)?.searchFacesInImage(nil)
     }
 
     @objc func actRefresh() {
