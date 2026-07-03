@@ -782,6 +782,7 @@ extension ViewController {
                 }
             }
             fileDB.db[SortKeyDir(folderpath)]!.files = newFiles
+            fileDB.db[SortKeyDir(folderpath)]!.unfilteredFiles = nil
             // 保存 AI 排序结果用于展示（按得分从高到低）
             if publicVar.isAIFilterOn && !publicVar.aiFilterPaths.isEmpty {
                 let aiSet = Set(publicVar.aiFilterPaths)
@@ -1322,6 +1323,10 @@ extension ViewController {
         var startFolder=lastFolder
         if direction == .zero && dest != "" { startFolder = dest }
         if !(direction == .zero && lastFolder == startFolder) {
+            // 旧目录的未过滤缓存随目录切换失效
+            fileDB.lock()
+            fileDB.db[SortKeyDir(lastFolder)]?.unfilteredFiles = nil
+            fileDB.unlock()
             // 重置递归模式
             // Reset recursive mode
             if !globalVar.keepFilterStateWhenSwitchFolder{

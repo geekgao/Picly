@@ -456,6 +456,9 @@ extension ViewController {
                 fileDB.unlock()
                 return
             }
+            if dirModel.unfilteredFiles == nil {
+                dirModel.unfilteredFiles = dirModel.files
+            }
             var refSize = DEFAULT_SIZE
             for (_, file) in dirModel.files {
                 if let size = file.originalSize, size.width > 0, size.height > 0 {
@@ -754,6 +757,9 @@ extension ViewController {
                 fileDB.unlock()
                 return
             }
+            if dirModel.unfilteredFiles == nil {
+                dirModel.unfilteredFiles = dirModel.files
+            }
             let geoSet = Set(publicVar.geoFilterPaths)
             var filtered = [(SortKeyFile, FileModel)]()
             for (key, file) in dirModel.files {
@@ -1012,6 +1018,9 @@ extension ViewController {
             guard let dirModel = fileDB.db[SortKeyDir(fileDB.curFolder)] else {
                 fileDB.unlock()
                 return
+            }
+            if dirModel.unfilteredFiles == nil {
+                dirModel.unfilteredFiles = dirModel.files
             }
             // 从当前目录已有的文件中取一个 originalSize 作为虚拟条目基准尺寸
             var refSize = DEFAULT_SIZE
@@ -1334,8 +1343,7 @@ extension ViewController {
                 publicVar.geoFilterPaths = []
                 searchField?.stringValue = ""
                 closeSearchOverlay()
-                refreshCollectionView(needLoadThumbPriority: true)
-                publicVar.updateToolbar()
+                applyFilter(isReset: true)
                 return true
             }
             return false
@@ -1371,8 +1379,7 @@ extension ViewController {
                     publicVar.isColorFilterOn = false
                     publicVar.colorFilterPaths = []
                     closeSearchOverlay()
-                    applyColorFilter()
-                    publicVar.updateToolbar()
+                    applyFilter(isReset: true)
                 } else {
                     closeSearchOverlay()
                 }
@@ -1408,6 +1415,48 @@ extension ViewController {
             publicVar.isColorFilterOn = false
             publicVar.colorFilterPaths = []
             search_isColorMode = false
+            
+            fileDB.lock()
+            let curFolder = fileDB.curFolder
+            if let dirModel = fileDB.db[SortKeyDir(curFolder)], let savedFiles = dirModel.unfilteredFiles {
+                dirModel.files = savedFiles
+                dirModel.unfilteredFiles = nil
+                dirModel.isFiltered = false
+                dirModel.aiOrderedPaths = []
+                dirModel.layoutCalcPos = 0
+                
+                var id = 0; var idInImage = 0; var idInImageAndVideo = 0
+                var imageCount = 0; var videoCount = 0
+                for (_, file) in dirModel.files {
+                    file.ver = fileDB.ver
+                    if !file.isDir {
+                        let ext = file.ext
+                        if publicVar.HandledImageAndRawExtensions.contains(ext) {
+                            file.idInImage = idInImage; idInImage += 1
+                            imageCount += 1
+                        }
+                        if publicVar.HandledFileExtensions.contains(ext) {
+                            file.id = id; id += 1
+                        }
+                        if publicVar.HandledImageAndRawExtensions.contains(ext) || publicVar.HandledVideoExtensions.contains(ext) {
+                            file.idInImageAndVideo = idInImageAndVideo; idInImageAndVideo += 1
+                        }
+                        if publicVar.HandledVideoExtensions.contains(ext) {
+                            videoCount += 1
+                        }
+                    }
+                }
+                dirModel.imageCount = imageCount
+                dirModel.videoCount = videoCount
+                dirModel.fileCount = id
+                fileDB.unlock()
+                
+                publicVar.isFilenameFilterOn = false
+                publicVar.updateToolbar()
+                switchFolder(path: curFolder)
+                return
+            }
+            fileDB.unlock()
         } else {
             search_filterText = searchField?.stringValue ?? ""
             // 文件名筛选时关闭其他模式
@@ -1420,11 +1469,17 @@ extension ViewController {
         }
         search_filterIsUseFullPath = search_isUseFullPath
         publicVar.isFilenameFilterOn = search_filterText == "" ? false : true
-        // 清空 DirMetadataCache，强制 treeTraversal 重新扫描，避免使用旧过滤后的 BTree
-        // Clear DirMetadataCache to force treeTraversal re-scan, preventing use of stale filtered BTree
+        
         fileDB.lock()
         let curFolder = fileDB.curFolder
+        if let dirModel = fileDB.db[SortKeyDir(curFolder)] {
+            if dirModel.unfilteredFiles == nil && search_filterText != "" {
+                dirModel.unfilteredFiles = dirModel.files
+            }
+        }
         fileDB.unlock()
+        // 清空 DirMetadataCache，强制 treeTraversal 重新扫描，避免使用旧过滤后的 BTree
+        // Clear DirMetadataCache to force treeTraversal re-scan, preventing use of stale filtered BTree
         dirURLCache.removeAll()
         if let folderURL = URL(string: curFolder) {
             DirMetadataCache.shared.removeCache(for: folderURL)

@@ -555,6 +555,9 @@ class DirModel {
     var keepScrollPos: Bool = false
     var isRecursiveMode: Bool = false
     var isFiltered: Bool = false
+    /// 过滤前原始文件的快照，用于快速恢复未过滤视图而不重新扫描磁盘
+    /// Snapshot of original files before filtering, for quick restore without disk re-scan
+    var unfilteredFiles: Map<SortKeyFile, FileModel>? = nil
     /// AI 搜索结果排序（file:// 路径按得分从高到低），仅在 isFiltered 且 AI 模式时使用
     var aiOrderedPaths: [String] = []
 
