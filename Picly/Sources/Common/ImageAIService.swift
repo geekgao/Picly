@@ -203,7 +203,7 @@ actor ImageAIService {
 
     // MARK: - API calls
 
-    func search(query: String, topK: Int = 200, minScore: Float = 0.15, filter: SearchFilter? = nil) async throws -> [SearchResultItem] {
+    func search(query: String, topK: Int = 200, minScore: Float = 0.05, filter: SearchFilter? = nil) async throws -> [SearchResultItem] {
         try await ensureRunning()
         let url = baseURL.appendingPathComponent("search")
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
@@ -274,7 +274,7 @@ actor ImageAIService {
         return try JSONDecoder().decode(StatusResponse.self, from: data)
     }
 
-    func searchByImage(path: String, topK: Int = 200, minScore: Float = 0.35, filter: SearchFilter? = nil) async throws -> [SearchResultItem] {
+    func searchByImage(path: String, topK: Int = 200, minScore: Float = 0.10, filter: SearchFilter? = nil) async throws -> [SearchResultItem] {
         try await ensureRunning()
         let url = baseURL.appendingPathComponent("search-by-image")
         var request = URLRequest(url: url)
