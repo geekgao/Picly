@@ -942,6 +942,91 @@ extension ViewController {
         }
     }
 
+    // MARK: - AI Tag Filter
+
+    func performAITagFilter(tag: String) {
+        aiTagTask?.cancel()
+        search_aiDebounceTask?.cancel()
+        reverseImageSearchTask?.cancel()
+        faceSearchTask?.cancel()
+        guard !tag.isEmpty else { return }
+
+        let folderPrefix = fileDB.curFolder.hasSuffix("/") ? fileDB.curFolder : fileDB.curFolder + "/"
+
+        // Fast path: cached server results
+        if let cachedAllPaths = AITagCache.shared.getSearchCache(tag: tag) {
+            let paths = cachedAllPaths.filter { $0.hasPrefix(folderPrefix) }
+            guard !paths.isEmpty else {
+                coreAreaView.showInfo(String(format: NSLocalizedString("AI: no results for \"%@\"", comment: "AI搜索无结果"), tag), timeOut: 2.0)
+                return
+            }
+            publicVar.aiFilterPaths = paths
+            publicVar.isAIFilterOn = true
+            applyAIFilter()
+            closeLargeImage(0)
+            publicVar.updateToolbar()
+            coreAreaView.showInfo(String(format: NSLocalizedString("AI: %d results for \"%@\"", comment: "AI搜索结果数"), paths.count, tag), timeOut: 2.0)
+            return
+        }
+
+        // Fast path: local tag index. Tag pill text comes from AITagCache.get(path:),
+        // so the entry for `tag` is guaranteed to be present once the large image's
+        // tags have been computed. AITagCache.set persists the result on the server
+        // side at index time, so this hits without a network round-trip.
+        let localAllPaths = AITagCache.shared.paths(for: tag)
+        if !localAllPaths.isEmpty {
+            AITagCache.shared.setSearchCache(tag: tag, paths: localAllPaths)
+            let paths = localAllPaths.filter { $0.hasPrefix(folderPrefix) }
+            guard !paths.isEmpty else {
+                coreAreaView.showInfo(String(format: NSLocalizedString("AI: no results for \"%@\"", comment: "AI搜索无结果"), tag), timeOut: 2.0)
+                return
+            }
+            publicVar.aiFilterPaths = paths
+            publicVar.isAIFilterOn = true
+            applyAIFilter()
+            closeLargeImage(0)
+            publicVar.updateToolbar()
+            coreAreaView.showInfo(String(format: NSLocalizedString("AI: %d results for \"%@\"", comment: "AI搜索结果数"), paths.count, tag), timeOut: 2.0)
+            return
+        }
+
+        aiTagTask = Task { [weak self] in
+            guard let self = self, !Task.isCancelled else { return }
+            await MainActor.run {
+                self.largeImageView.showAISearchLoading()
+            }
+            do {
+                try await ImageAIService.shared.ensureRunning()
+                guard !Task.isCancelled else { return }
+                let results = try await ImageAIService.shared.search(query: tag, topK: 200, minScore: 0.05)
+                guard !Task.isCancelled else { return }
+                let allPaths = results.compactMap { URL(fileURLWithPath: $0.image.path).absoluteString }
+                AITagCache.shared.setSearchCache(tag: tag, paths: allPaths)
+                let paths = allPaths.filter { $0.hasPrefix(folderPrefix) }
+                await MainActor.run { [paths, tag] in
+                    guard !Task.isCancelled else { return }
+                    self.largeImageView.hideAISearchLoading()
+                    if paths.isEmpty {
+                        coreAreaView.showInfo(String(format: NSLocalizedString("AI: no results for \"%@\"", comment: "AI搜索无结果"), tag), timeOut: 2.0)
+                        return
+                    }
+                    self.publicVar.aiFilterPaths = paths
+                    self.publicVar.isAIFilterOn = true
+                    self.applyAIFilter()
+                    self.closeLargeImage(0)
+                    publicVar.updateToolbar()
+                    coreAreaView.showInfo(String(format: NSLocalizedString("AI: %d results for \"%@\"", comment: "AI搜索结果数"), paths.count, tag), timeOut: 2.0)
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    log("AI tag filter error: \(error.localizedDescription)")
+                    coreAreaView.showInfo(String(format: NSLocalizedString("AI tag search failed: %@", comment: "AI标签搜索失败"), error.localizedDescription), timeOut: 3.0)
+                }
+            }
+        }
+    }
+
     private func parseNaturalLanguageFilter(from query: String) async -> (filter: SearchFilter, cleanedQuery: String) {
         var text = query
         var dateFrom: Date?
