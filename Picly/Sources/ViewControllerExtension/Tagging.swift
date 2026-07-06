@@ -274,6 +274,60 @@ extension ViewController {
             largeImageView.refreshRatingStars()
         }
     }
-    
-    
+
+    // MARK: - Tag progress overlay
+
+    func startTagProgressPolling() {
+        tagProgressTask?.cancel()
+        tagProgressTask = Task { [weak self] in
+            while !Task.isCancelled {
+                if let self {
+                    await self.pollTagProgressOnce()
+                }
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+            }
+        }
+    }
+
+    func stopTagProgressPolling() {
+        tagProgressTask?.cancel()
+        tagProgressTask = nil
+        DispatchQueue.main.async { [weak self] in
+            self?.coreAreaView.hideScanProgress(delayed: 0)
+        }
+    }
+
+    @MainActor
+    private func pollTagProgressOnce() async {
+        guard globalVar.imageAIEnabled, globalVar.aiAutoTaggingEnabled else {
+            coreAreaView.hideScanProgress(delayed: 0)
+            return
+        }
+
+        let status: StatusResponse?
+        do {
+            status = try await ImageAIService.shared.status()
+        } catch {
+            return
+        }
+        guard let lastJob = status?.lastJob, lastJob.withTags == true else {
+            coreAreaView.hideScanProgress(delayed: 0)
+            return
+        }
+
+        let total = lastJob.totalCount
+        let tagged = lastJob.taggedCount ?? 0
+
+        switch lastJob.status {
+        case "indexing":
+            guard total > 0 else { return }
+            let pct = Int(round(Double(tagged) / Double(total) * 100))
+            let message = String(format: NSLocalizedString("Tagging %d/%d (%d%%)", comment: "打标签进度"), tagged, total, pct)
+            coreAreaView.showScanProgress(message)
+        case "completed":
+            coreAreaView.hideScanProgress(delayed: 1.2)
+        default:
+            coreAreaView.hideScanProgress(delayed: 0)
+        }
+    }
 }

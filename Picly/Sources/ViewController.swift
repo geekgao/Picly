@@ -498,6 +498,8 @@ class ViewController: NSViewController, NSSplitViewDelegate, NSSearchFieldDelega
     var reverseImageStatusLabel: NSTextField?
     var reverseImageSearchTask: Task<Void, Never>?
     var faceSearchTask: Task<Void, Never>?
+    var aiTagTask: Task<Void, Never>?
+    var tagProgressTask: Task<Void, Never>?
     var faceOverlayTask: Task<Void, Never>?
     var faceIndexTask: Task<Void, Never>?
     var personBrowserOverlay: NSView?
@@ -918,6 +920,14 @@ class ViewController: NSViewController, NSSplitViewDelegate, NSSearchFieldDelega
         // startListeningForFileSystemEvents(in: "/Users")
         // startWatchingDirectory(atPath: "/Users")
         
+        // AI tag pill click → filter
+        largeImageView.onAITagClick = { [weak self] tagName in
+            self?.performAITagFilter(tag: tagName)
+        }
+
+        // Tag-progress overlay (shown while a background index-with-tags job runs)
+        startTagProgressPolling()
+
         log("End viewDidLoad")
         // End viewDidLoad
 
@@ -927,7 +937,9 @@ class ViewController: NSViewController, NSSplitViewDelegate, NSSearchFieldDelega
         // 在这里执行清理工作
         // Perform cleanup work here
         log("ViewController is being deinitialized")
-        
+
+        stopTagProgressPolling()
+
         // 存储关闭的目录/文件
         // Store closed directory/file
         if publicVar.isInLargeView {
