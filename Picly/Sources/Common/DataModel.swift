@@ -158,7 +158,8 @@ class SortKey: Comparable {
         if !sortKey.isDir{
             let ext = ext(sortKey)
             if globalVar.HandledImageAndRawExtensions.contains(ext) {
-                let imageInfo = getImageInfo(url: URL(string: sortKey.path)!, needMetadata: true)
+                guard let url = URL(string: sortKey.path) else { return }
+                let imageInfo = getImageInfo(url: url, needMetadata: true)
                 let exifData = imageInfo?.properties?[kCGImagePropertyExifDictionary as String] as? [String: Any]
                 let tiffData = imageInfo?.properties?[kCGImagePropertyTIFFDictionary as String] as? [String: Any]
                 // 拍摄时间
@@ -193,7 +194,8 @@ class SortKey: Comparable {
                 }
             }
             if globalVar.HandledVideoExtensions.contains(ext) {
-                if let (width,height,date) = getVideoResolutionAndDateFFmpeg(for: URL(string: sortKey.path)!) {
+                guard let url = URL(string: sortKey.path) else { return }
+                if let (width,height,date) = getVideoResolutionAndDateFFmpeg(for: url) {
                     sortKey.exifPixel = width*height
                     if let date = date {
                         sortKey.exifDate = date

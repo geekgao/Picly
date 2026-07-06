@@ -45286,6 +45286,23 @@
         }
       }
     },
+    "AI: searching for tag…": {
+      "comment": "AI标签搜索中",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "AI: searching for tag…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI：正在搜索标签…"
+          }
+        }
+      }
+    },
     "No AI search results found.": {
       "comment": "AI搜索无结果",
       "localizations": {

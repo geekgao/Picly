@@ -234,6 +234,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         if let imageAIEnabled = UserDefaults.standard.value(forKey: "imageAIEnabled") as? Bool {
             globalVar.imageAIEnabled = imageAIEnabled
         }
+        if let aiAutoTaggingEnabled = UserDefaults.standard.value(forKey: "aiAutoTaggingEnabled") as? Bool {
+            globalVar.aiAutoTaggingEnabled = aiAutoTaggingEnabled
+        }
+        if let aiTagDisplayEnabled = UserDefaults.standard.value(forKey: "aiTagDisplayEnabled") as? Bool {
+            globalVar.aiTagDisplayEnabled = aiTagDisplayEnabled
+        }
+        if let aiTaggerModel = UserDefaults.standard.value(forKey: "aiTaggerModel") as? String {
+            globalVar.aiTaggerModel = aiTaggerModel
+        }
+        if let aiTaggerThreshold = UserDefaults.standard.value(forKey: "aiTaggerThreshold") as? Double {
+            globalVar.aiTaggerThreshold = aiTaggerThreshold
+        }
         globalVar.myFavoritesArray = defaults.array(forKey: "globalVar.myFavoritesArray") as? [String] ?? [String]()
         
         if let savedLabels = UserDefaults.standard.array(forKey: CustomTagView.userDefaultsKey) as? [[String: Any]] {

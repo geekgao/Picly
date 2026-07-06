@@ -1,8 +1,3 @@
-//
-//  DemoSettingsViewController.swift
-//  Picly
-//
-
 import Settings
 import Cocoa
 
@@ -16,10 +11,14 @@ final class TaggingSettingsViewController: NSViewController, SettingsPane {
     @IBOutlet weak var customTagView: CustomTagView!
     @IBOutlet weak var learnMoreButton: LearnMoreClickableLabel!
     @IBOutlet weak var enableEnhancedIndexCheckbox: NSButton!
+    @IBOutlet weak var enableAIAutoTaggingCheckbox: NSButton!
+    @IBOutlet weak var showAITagsOnLargeImageCheckbox: NSButton!
     
     override func viewDidLoad() {
         super.viewDidLoad()
         enableEnhancedIndexCheckbox.state = globalVar.enhancedIndexEnabled ? .on : .off
+        enableAIAutoTaggingCheckbox.state = globalVar.aiAutoTaggingEnabled ? .on : .off
+        showAITagsOnLargeImageCheckbox.state = globalVar.aiTagDisplayEnabled ? .on : .off
         learnMoreButton.onClick = { [weak self] in
             getAnyViewController()?.handleTagLearnMore()
         }
@@ -33,8 +32,16 @@ final class TaggingSettingsViewController: NSViewController, SettingsPane {
         }
     }
 
-}
+    @objc private func aiAutoTaggingToggled(_ sender: NSButton) {
+        globalVar.aiAutoTaggingEnabled = (sender.state == .on)
+        UserDefaults.standard.set(globalVar.aiAutoTaggingEnabled, forKey: "aiAutoTaggingEnabled")
+    }
 
+    @objc private func aiTagDisplayToggled(_ sender: NSButton) {
+        globalVar.aiTagDisplayEnabled = (sender.state == .on)
+        UserDefaults.standard.set(globalVar.aiTagDisplayEnabled, forKey: "aiTagDisplayEnabled")
+    }
+}
 // MARK: - CustomTagView
 
 class CustomTagView: NSView {

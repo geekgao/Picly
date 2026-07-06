@@ -240,7 +240,8 @@ extension CGImage {
 func getFileInfo(file: FileModel) {
     let fileManager = FileManager.default
     do {
-        let attributes = try fileManager.attributesOfItem(atPath: URL(string: file.path)!.path)
+        guard let url = URL(string: file.path) else { return }
+        let attributes = try fileManager.attributesOfItem(atPath: url.path)
         if let size = attributes[.size] as? Int {
             file.fileSize = size
         }

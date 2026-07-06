@@ -207,7 +207,7 @@ extension ViewController {
     
     func openLargeImage(_ indexPath: IndexPath) {
         if let item = collectionView.item(at: indexPath) as? CustomCollectionViewItem{
-            let url=URL(string: item.file.path)!
+            guard let url=URL(string: item.file.path) else { return }
             
             // 取消OCR
             // Cancel OCR
@@ -449,7 +449,7 @@ extension ViewController {
     }
     
     func setWindowTitleOfLargeImage(file: FileModel){
-        let url=URL(string:file.path)!
+        guard let url=URL(string:file.path) else { return }
         var fullTitle=url.lastPathComponent
         // fullTitle += " | " + readableFileSize(file.fileSize ?? 0)
         if let originalSize = file.originalSize {
@@ -611,7 +611,7 @@ extension ViewController {
     func preloadLargeImageForFile(file: FileModel, priority: Double){
         if file.type != .image {return}
 
-        let url=URL(string:file.path)!
+        guard let url=URL(string:file.path) else { return }
         let scale = NSScreen.main?.backingScaleFactor ?? 1
         let maxBounds=largeImageView.bounds
         // print(maxBounds)
@@ -696,7 +696,10 @@ extension ViewController {
         var file=FileModel(path: "", ver: 0)
         var isThisFromFinder=false
         if publicVar.openFromFinderPath != "" {
-            let url = URL(string: publicVar.openFromFinderPath)!
+            guard let url = URL(string: publicVar.openFromFinderPath) else {
+                log("changeLargeImage: invalid openFromFinderPath=\(publicVar.openFromFinderPath)")
+                return
+            }
             file=FileModel(path: publicVar.openFromFinderPath, ver: 0)
             file.imageInfo=getImageInfo(url: url, needMetadata: true)
             file.finderTags = (try? url.resourceValues(forKeys: [.tagNamesKey]))?.tagNames ?? []
@@ -712,7 +715,7 @@ extension ViewController {
             }
             getFileInfo(file: file)
             
-            file.ext=URL(string: file.path)!.pathExtension.lowercased()
+            file.ext=URL(fileURLWithPath: file.path).pathExtension.lowercased()
             if globalVar.HandledImageAndRawExtensions.contains(file.ext) {
                 file.type = .image
             }else if globalVar.HandledVideoExtensions.contains(file.ext) {
@@ -746,10 +749,15 @@ extension ViewController {
         largeImageView.file=file
         largeImageView.refreshFinderTagDots()
         largeImageView.refreshRatingStars()
+        refreshAITagsIfNeeded()
 
         if justChangeLargeImageViewFile {return}
-  
-        let url=URL(string:file.path)!
+   
+        guard !file.path.isEmpty else { return }
+        guard let url = URL(string: file.path) else {
+            log("changeLargeImage: invalid file.path=\(file.path)")
+            return
+        }
         
         if forceRefresh {
             getFileInfo(file: file)
@@ -1049,6 +1057,44 @@ extension ViewController {
                 largeImageView.playVideo(reload: forceRefresh)
             }
             
+        }
+    }
+
+    // MARK: - AI Tag display
+
+    func refreshAITagsIfNeeded() {
+        guard globalVar.imageAIEnabled && globalVar.aiAutoTaggingEnabled else { return }
+
+        let path = largeImageView.file.path
+        let barePath = URL(string: path)?.path ?? path
+
+        // Check cache first
+        if AITagCache.shared.get(path: path) != nil {
+            largeImageView.refreshAITags()
+            return
+        }
+
+        // Cancel any in-flight task
+        aiTagTask?.cancel()
+        aiTagTask = Task { [weak self] in
+            guard let self = self, !Task.isCancelled else { return }
+            do {
+                try await ImageAIService.shared.ensureRunning()
+                guard !Task.isCancelled else { return }
+                let resp = try await ImageAIService.shared.tagImage(
+                    path: barePath,
+                    model: globalVar.aiTaggerModel.isEmpty ? "vision" : globalVar.aiTaggerModel,
+                    threshold: Float32(globalVar.aiTaggerThreshold))
+                guard !Task.isCancelled else { return }
+                // Cache the results
+                AITagCache.shared.set(path: path, tags: resp.tags)
+                await MainActor.run {
+                    self.largeImageView.refreshAITags()
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                log("AI tag fetch failed: \(error.localizedDescription)")
+            }
         }
     }
 }

@@ -427,7 +427,7 @@ class CustomCollectionViewItem: NSCollectionViewItem {
         
         setTooltip()
         
-        imageNameField.stringValue = viewController.publicVar.profile.isShowThumbnailFilename ? URL(string:file.path)!.lastPathComponent : ""
+        imageNameField.stringValue = viewController.publicVar.profile.isShowThumbnailFilename ? (URL(string:file.path)?.lastPathComponent ?? "") : ""
 
         if isSelected {
             // 选中状态的处理代码
@@ -1334,7 +1334,7 @@ class CustomCollectionViewItem: NSCollectionViewItem {
         var urls = viewController.publicVar.selectedUrls()
 
         if openSingleFile {
-            urls = [URL(string: file.path)!]
+            urls = [URL(string: file.path)].compactMap { $0 }
         }
         
         if !self.isSelected {

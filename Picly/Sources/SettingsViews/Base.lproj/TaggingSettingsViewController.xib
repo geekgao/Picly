@@ -11,13 +11,15 @@
                 <outlet property="customTagView" destination="d0r-LL-TNQ" id="lWO-GQ-jk9"/>
                 <outlet property="enableEnhancedIndexCheckbox" destination="EDf-Da-Tf7" id="101-qL-PEb"/>
                 <outlet property="learnMoreButton" destination="qnF-Ts-3A1" id="Ee8-af-7RP"/>
+                <outlet property="enableAIAutoTaggingCheckbox" destination="EAT-bn-0" id="xyz-EAT-000"/>
+                <outlet property="showAITagsOnLargeImageCheckbox" destination="SAT-on-5" id="xyz-SAT-111"/>
                 <outlet property="view" destination="w9t-Vi-0Is" id="NFn-zx-iPh"/>
             </connections>
         </customObject>
         <customObject id="-1" userLabel="First Responder" customClass="FirstResponder"/>
         <customObject id="-3" userLabel="Application" customClass="NSObject"/>
         <customView id="w9t-Vi-0Is">
-            <rect key="frame" x="0.0" y="0.0" width="510" height="706"/>
+                    <rect key="frame" x="0.0" y="0.0" width="510" height="780"/>
             <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
             <subviews>
                 <gridView xPlacement="center" yPlacement="center" rowAlignment="none" rowSpacing="8" columnSpacing="10" translatesAutoresizingMaskIntoConstraints="NO" id="Rch-Bu-Q2t">
@@ -32,6 +34,9 @@
                         <gridRow height="20" id="gts-uD-d5Z"/>
                         <gridRow yPlacement="top" id="ZWa-1o-EWV"/>
                         <gridRow id="b7O-3o-hpH"/>
+                        <gridRow height="20" id="aiT-GR-1"/>
+                        <gridRow yPlacement="top" id="aiL-be-2"/>
+                        <gridRow id="aiN-xt-3"/>
                     </rows>
                     <columns>
                         <gridColumn xPlacement="trailing" id="X7r-A5-zjQ"/>
@@ -117,6 +122,47 @@ Later, when you select the corresponding tag in the directory tree, the app will
                                     <color key="backgroundColor" name="textBackgroundColor" catalog="System" colorSpace="catalog"/>
                                 </textFieldCell>
                             </textField>
+                        </gridCell>
+                        <gridCell row="aiT-GR-1" column="X7r-A5-zjQ" headOfMergedCell="qcM-Zn-AI1" xPlacement="fill" id="qcM-Zn-AI1">
+                            <box key="contentView" verticalHuggingPriority="750" boxType="separator" translatesAutoresizingMaskIntoConstraints="NO" id="aiB-ox-4">
+                                <rect key="frame" x="0.0" y="0.0" width="450" height="5"/>
+                            </box>
+                        </gridCell>
+                        <gridCell row="aiT-GR-1" column="oNd-Vu-470" headOfMergedCell="qcM-Zn-AI1" id="qlL-xb-5"/>
+                        <gridCell row="aiL-be-2" column="X7r-A5-zjQ" id="aiC-el-6">
+                            <textField key="contentView" focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="AIt-fd-7">
+                                <rect key="frame" x="0.0" y="0.0" width="100" height="16"/>
+                                <textFieldCell key="cell" alignment="right" title="AI Tagging:" id="AIc-el-8">
+                                    <font key="font" usesAppearanceFont="YES"/>
+                                    <color key="textColor" name="labelColor" catalog="System" colorSpace="catalog"/>
+                                    <color key="backgroundColor" name="textBackgroundColor" catalog="System" colorSpace="catalog"/>
+                                </textFieldCell>
+                            </textField>
+                        </gridCell>
+                        <gridCell row="aiL-be-2" column="oNd-Vu-470" id="aiE-bx-9">
+                            <button key="contentView" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="EAT-bn-0">
+                                <rect key="frame" x="108" y="0.0" width="200" height="18"/>
+                                <buttonCell key="cell" type="check" title="Enable AI Auto Tagging" bezelStyle="regularSquare" imagePosition="left" inset="2" id="EAT-ce-1">
+                                    <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
+                                    <font key="font" metaFont="system"/>
+                                </buttonCell>
+                                <connections>
+                                    <action selector="aiAutoTaggingToggled:" target="-2" id="EAT-ac-2"/>
+                                </connections>
+                            </button>
+                        </gridCell>
+                        <gridCell row="aiN-xt-3" column="X7r-A5-zjQ" id="aiE-pt-3"/>
+                        <gridCell row="aiN-xt-3" column="oNd-Vu-470" id="aiS-ht-4">
+                            <button key="contentView" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="SAT-on-5">
+                                <rect key="frame" x="108" y="0.0" width="280" height="18"/>
+                                <buttonCell key="cell" type="check" title="Show AI Tags on Large Image" bezelStyle="regularSquare" imagePosition="left" inset="2" id="SAT-ce-6">
+                                    <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
+                                    <font key="font" metaFont="system"/>
+                                </buttonCell>
+                                <connections>
+                                    <action selector="aiTagDisplayToggled:" target="-2" id="SAT-ac-7"/>
+                                </connections>
+                            </button>
                         </gridCell>
                     </gridCells>
                 </gridView>

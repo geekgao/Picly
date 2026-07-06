@@ -22,17 +22,37 @@ else
 fi
 echo ""
 
-echo "=== Building imageai (Release) ==="
+echo "=== Building Web Editor frontend ==="
 IMAGEAI_DIR="/Users/lisheng/Workdir/imageai"
+EDITOR_SCRIPT="$IMAGEAI_DIR/scripts/build-editor.sh"
+if [ -f "$EDITOR_SCRIPT" ]; then
+    bash "$EDITOR_SCRIPT"
+else
+    echo "  ⚠️  build-editor.sh not found, skipping Web Editor build"
+fi
+echo ""
+
+echo "=== Building imageai (Release) ==="
 pushd "$IMAGEAI_DIR" > /dev/null
 swift build -c release 2>&1
 popd > /dev/null
 echo ""
 
-echo "=== Copying imageai binary ==="
+echo "=== Copying imageai artifacts ==="
 RESOURCES_DIR="Picly/Resources"
+
 cp "$IMAGEAI_DIR/.build/release/imageai" "$RESOURCES_DIR/imageai"
 echo "  Copied: $RESOURCES_DIR/imageai ($(du -sh "$RESOURCES_DIR/imageai" 2>/dev/null | cut -f1))"
+
+IMAGEAI_BUNDLE="imageai_ImageAICLI.bundle"
+BUNDLE_SRC="$IMAGEAI_DIR/.build/release/$IMAGEAI_BUNDLE"
+if [ -d "$BUNDLE_SRC" ]; then
+    rm -rf "$RESOURCES_DIR/$IMAGEAI_BUNDLE"
+    cp -R "$BUNDLE_SRC" "$RESOURCES_DIR/$IMAGEAI_BUNDLE"
+    echo "  Copied: $RESOURCES_DIR/$IMAGEAI_BUNDLE ($(du -sh "$RESOURCES_DIR/$IMAGEAI_BUNDLE" 2>/dev/null | cut -f1))"
+else
+    echo "  ⚠️  $IMAGEAI_BUNDLE not found at $BUNDLE_SRC"
+fi
 
 echo "=== Signing imageai binary ==="
 codesign -f -s - "$RESOURCES_DIR/imageai"

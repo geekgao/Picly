@@ -105,7 +105,11 @@ class GlobalVar{
     var largeImageViewShowTagsAndRating = true
     var enhancedIndexEnabled = true
     var collectionViewItemShowTooltip = true
-    var imageAIEnabled = false
+    var imageAIEnabled = true
+    var aiAutoTaggingEnabled = true
+    var aiTagDisplayEnabled = true
+    var aiTaggerModel: String = "vision"  // "vision", "wd14" or "ram"
+    var aiTaggerThreshold: Double = 0.35
     var aiLastIndexedPath: String = ""
     var aiLastIndexedTime: CFAbsoluteTime = 0
     

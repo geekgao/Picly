@@ -374,8 +374,13 @@ extension ViewController {
 
             // 检查按键是否是 Command+E 键 (编辑模式)
             if characters == "e" && isCommandPressed && !isAltPressed && !isCtrlPressed && !isShiftPressed {
-                if publicVar.isInLargeView{
+                if publicVar.isInLargeView {
                     largeImageView.enterEditMode()
+                } else if let indexPath = collectionView.selectionIndexPaths.min() {
+                    if publicVar.isCollectionViewFirstResponder {
+                        openLargeImage(indexPath)
+                        largeImageView.enterEditMode()
+                    }
                 }
                 return nil
             }

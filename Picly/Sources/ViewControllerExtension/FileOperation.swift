@@ -1052,6 +1052,9 @@ extension ViewController {
                 }
                 fileDB.unlock()
 
+                // 检查当前大图是否被删除
+                let isCurrentLargeImageDeleted = publicVar.isInLargeView && urlsToDelete.contains { $0.absoluteString == largeImageView.file.path }
+
                 // 直接从 CollectionView 移除，无需再跑后台扫描（BTree 已更新）
                 // Remove from CollectionView directly, no background scan needed
                 DispatchQueue.main.async { [weak self] in
@@ -1064,6 +1067,27 @@ extension ViewController {
                     // 重启监控即可，BTree 已是最新状态
                     stopWatchingDirectory()
                     startWatchingDirectory(atPath: curFolder.replacingOccurrences(of: "file://", with: "").removingPercentEncoding!)
+
+                    // 若大图正在显示且当前图片被删除，自动切换到下一张
+                    if isCurrentLargeImageDeleted {
+                        fileDB.lock()
+                        let isEmpty = (fileDB.db[SortKeyDir(curFolder)]?.files.isEmpty ?? true)
+                        let totalFiles = fileDB.db[SortKeyDir(curFolder)]?.files.count ?? 0
+                        fileDB.unlock()
+                        if isEmpty {
+                            closeLargeImage(0)
+                        } else {
+                            if currLargeImagePos >= totalFiles {
+                                currLargeImagePos = totalFiles - 1
+                            }
+                            // 重置加载状态标记，确保 changeLargeImage 不会因缓存优化跳过新图片的加载
+                            lastDoNotGenResized = false
+                            lastResizeFailed = false
+                            lastUseHDR = false
+                            lastLargeImageRotate = 0
+                            changeLargeImage()
+                        }
+                    }
                 }
                 
             } else {

@@ -47,6 +47,9 @@ class LargeImageView: NSView {
     var unsupportedVideoOverlay: NSView!
     var finderTagDotsView: NSView?
     var ratingStarsView: NSView?
+    var aiTagPillContainer: NSView?
+    var onAITagClick: ((String) -> Void)?
+    var aiSearchLoadingLabel: NSTextField?
 
     // MARK: - 图片编辑相关属性
     // MARK: - Image editing related properties
@@ -219,6 +222,7 @@ class LargeImageView: NSView {
         
         refreshFinderTagDots()
         refreshRatingStars()
+        refreshAITags()
 
         // 创建边缘切换箭头视图
         // Create edge switching arrow views
@@ -243,6 +247,7 @@ class LargeImageView: NSView {
     func refreshFinderTagDots() {
         finderTagDotsView?.removeFromSuperview()
         finderTagDotsView = nil
+        guard !isInEditMode else { return }
         guard globalVar.largeImageViewShowTagsAndRating else { return }
 
         let tags = file.finderTags.compactMap { FinderTag.byName($0) }
@@ -336,6 +341,7 @@ class LargeImageView: NSView {
     func refreshRatingStars() {
         ratingStarsView?.removeFromSuperview()
         ratingStarsView = nil
+        guard !isInEditMode else { return }
         guard globalVar.largeImageViewShowTagsAndRating else { return }
 
         guard let rating = file.imageInfo?.rating, rating >= 1, rating <= 5 else { return }
@@ -390,6 +396,104 @@ class LargeImageView: NSView {
         }
 
         ratingStarsView = container
+    }
+
+    func refreshAITags() {
+        aiTagPillContainer?.removeFromSuperview()
+        aiTagPillContainer = nil
+        guard !isInEditMode else { return }
+        guard globalVar.aiTagDisplayEnabled, globalVar.aiAutoTaggingEnabled else { return }
+
+        let tags = AITagCache.shared.get(path: file.path)
+        guard let tags = tags, !tags.isEmpty else {
+            if globalVar.imageAIEnabled { showAILoadingHint() }
+            return
+        }
+
+        let fontSize: CGFloat = 11
+        let font = NSFont.systemFont(ofSize: fontSize)
+        let padding: CGFloat = 6
+        let spacing: CGFloat = 4
+        let textPaddingH: CGFloat = 8
+        let pillHeight: CGFloat = 22
+
+        var contentWidth: CGFloat = 0
+        for (i, tagResult) in tags.enumerated() {
+            if i > 0 { contentWidth += spacing }
+            let text = "\(tagResult.tag) \(Int(tagResult.confidence * 100))%"
+            let textWidth = (text as NSString).size(withAttributes: [.font: font]).width
+            contentWidth += ceil(textWidth) + textPaddingH * 2
+        }
+
+        let totalWidth = contentWidth + padding * 2
+        let container = NSView()
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.5).cgColor
+        container.layer?.cornerRadius = pillHeight / 2
+        container.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(container)
+
+        NSLayoutConstraint.activate([
+            container.leadingAnchor.constraint(equalTo: self.leadingAnchor, constant: 15),
+            container.bottomAnchor.constraint(equalTo: finderTagDotsView?.topAnchor ?? self.bottomAnchor, constant: finderTagDotsView != nil ? -6 : -15),
+            container.widthAnchor.constraint(lessThanOrEqualTo: self.widthAnchor, constant: -30),
+            container.heightAnchor.constraint(equalToConstant: pillHeight),
+        ])
+
+        var xOffset: CGFloat = padding
+        for tagResult in tags {
+            let text = "\(tagResult.tag) \(Int(tagResult.confidence * 100))%"
+            let textWidth = (text as NSString).size(withAttributes: [.font: font]).width
+            let labelWidth = ceil(textWidth) + textPaddingH * 2
+            let label = TagPillLabel(frame: NSRect(x: xOffset, y: 0, width: labelWidth, height: pillHeight))
+            label.tagName = tagResult.tag
+            label.font = font
+            label.textColor = .white
+            label.layer?.cornerRadius = pillHeight / 2
+            label.stringValue = text
+            label.onClick = { [weak self] tagName in
+                self?.onAITagClick?(tagName)
+            }
+            container.addSubview(label)
+            xOffset += labelWidth + spacing
+        }
+
+        aiTagPillContainer = container
+    }
+
+    /// Show a subtle loading hint when AI tags are being fetched.
+    private func showAILoadingHint() {
+        let label = NSTextField(labelWithString: NSLocalizedString("AI tagging…", comment: "AI标签加载中"))
+        label.font = NSFont.systemFont(ofSize: 10)
+        label.textColor = NSColor.white.withAlphaComponent(0.6)
+        label.alignment = .left
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: self.leadingAnchor, constant: 15),
+            label.bottomAnchor.constraint(equalTo: finderTagDotsView?.topAnchor ?? self.bottomAnchor, constant: finderTagDotsView != nil ? -6 : -15),
+        ])
+        aiTagPillContainer = label
+    }
+
+    func showAISearchLoading() {
+        aiSearchLoadingLabel?.removeFromSuperview()
+        let label = NSTextField(labelWithString: NSLocalizedString("AI: searching for tag…", comment: "AI标签搜索中"))
+        label.font = NSFont.systemFont(ofSize: 12)
+        label.textColor = NSColor.white
+        label.alignment = .center
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+        NSLayoutConstraint.activate([
+            label.centerXAnchor.constraint(equalTo: self.centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: self.centerYAnchor),
+        ])
+        aiSearchLoadingLabel = label
+    }
+
+    func hideAISearchLoading() {
+        aiSearchLoadingLabel?.removeFromSuperview()
+        aiSearchLoadingLabel = nil
     }
 
     // MARK: - 边缘切换箭头视图
@@ -1847,8 +1951,8 @@ class LargeImageView: NSView {
             
             menu.addItem(NSMenuItem.separator())
             
-            if URL(string: file.path)!.hasDirectoryPath == false {
-                addOpenWithSubMenu(to: menu, for: URL(string: file.path)!)
+            if let url = URL(string: file.path), url.hasDirectoryPath == false {
+                addOpenWithSubMenu(to: menu, for: url)
             }
             
             menu.addItem(withTitle: NSLocalizedString("Show in Finder", comment: "在Finder中显示"), action: #selector(actShowInFinder), keyEquivalent: "")
@@ -2110,7 +2214,8 @@ class LargeImageView: NSView {
         NSWorkspace.shared.selectFile(file.path.replacingOccurrences(of: "file://", with: "").removingPercentEncoding!, inFileViewerRootedAtPath: folderPath)
     }
     @objc func actRename() {
-        getViewController(self)?.handleRename(urls: [URL(string: file.path)!]);
+        guard let url = URL(string: file.path) else { return }
+        getViewController(self)?.handleRename(urls: [url]);
     }
     
     @objc func actCopy() {
@@ -3170,5 +3275,65 @@ class ClickableLabel: NSView {
         } else {
             layer?.backgroundColor = normalColor.cgColor
         }
+    }
+}
+
+// MARK: - TagPillLabel
+// NSView subclass with click/hover for AI tag pills.
+class TagPillLabel: NSView {
+    var tagName: String = ""
+    var onClick: ((String) -> Void)?
+    var stringValue: String = ""
+    var textColor: NSColor = .white
+    var font: NSFont = NSFont.systemFont(ofSize: 11)
+
+    private let normalAlpha: CGFloat = 0.75
+    private let hoverAlpha: CGFloat = 0.9
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor(white: 0.3, alpha: 0.75).cgColor
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: textColor
+        ]
+        let size = (stringValue as NSString).size(withAttributes: attrs)
+        let point = NSPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2)
+        (stringValue as NSString).draw(at: point, withAttributes: attrs)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        layer?.backgroundColor = NSColor(white: 0.5, alpha: 0.9).cgColor
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        let loc = convert(event.locationInWindow, from: nil)
+        if bounds.contains(loc) {
+            layer?.backgroundColor = NSColor(white: 0.5, alpha: hoverAlpha).cgColor
+            onClick?(tagName)
+        }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach { removeTrackingArea($0) }
+        let opts: NSTrackingArea.Options = [.mouseEnteredAndExited, .activeInKeyWindow]
+        let area = NSTrackingArea(rect: bounds, options: opts, owner: self)
+        addTrackingArea(area)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        layer?.backgroundColor = NSColor(white: 0.5, alpha: hoverAlpha).cgColor
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        layer?.backgroundColor = NSColor(white: 0.3, alpha: normalAlpha).cgColor
     }
 }

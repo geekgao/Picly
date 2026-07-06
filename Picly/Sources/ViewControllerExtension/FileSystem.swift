@@ -804,7 +804,7 @@ extension ViewController {
                 ele.1.ver = fileDB.db[SortKeyDir(folderpath)]!.ver
                 ele.1.canBeCalcued = false
                 if !ele.1.isDir{
-                    ele.1.ext=URL(string: ele.1.path)!.pathExtension.lowercased()
+                    ele.1.ext=URL(string: ele.1.path)?.pathExtension.lowercased() ?? ""
                     if ele.1.isAlias {
                         ele.1.type = .other
                         if let resolved = try? URL(resolvingAliasFileAt: URL(string: ele.1.path)!) {

@@ -3,4 +3,5 @@ xcuserdata/
 .code2/
 .imageai/
 .build/
+build/
 .DS_Store

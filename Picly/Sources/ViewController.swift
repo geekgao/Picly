@@ -1816,7 +1816,7 @@ class ViewController: NSViewController, NSSplitViewDelegate, NSSearchFieldDelega
                                 // 获取缩略图开始之前版本 （注：已经用dirModel的方法）
                                 // Get version before thumbnail starts (Note: dirModel method already used)
                                 // let fileVer=file.ver
-                                let url=URL(string: key.path)!
+                                guard let url=URL(string: key.path) else { continue }
                                 var image: NSImage? = nil
                                 var getThumbFailed = false
                                 if doNotActualRead{
@@ -2706,7 +2706,7 @@ class ViewController: NSViewController, NSSplitViewDelegate, NSSearchFieldDelega
         for i in selectedIndexes {
             if i < fileDB.db[SortKeyDir(fileDB.curFolder)]!.files.count {
                 if let file=fileDB.db[SortKeyDir(fileDB.curFolder)]!.files.elementSafe(atOffset: i)?.1{
-                    urls.append(URL(string: file.path)!)
+                    if let url = URL(string: file.path) { urls.append(url) }
                 }
             }
         }
