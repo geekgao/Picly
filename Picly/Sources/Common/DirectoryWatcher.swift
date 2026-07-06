@@ -104,7 +104,8 @@ actor DirectoryWatcher {
 
             if exists && !isDir.boolValue {
                 do {
-                    try await imageAI.indexFile(path: path)
+                    let withTags = globalVar.imageAIEnabled && globalVar.aiAutoTaggingEnabled
+                    try await imageAI.indexFile(path: path, withTags: withTags)
                     log("DirectoryWatcher: indexed \(path)")
                 } catch {
                     log("DirectoryWatcher: index failed \(path): \(error.localizedDescription)")

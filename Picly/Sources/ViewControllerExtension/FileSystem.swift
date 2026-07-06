@@ -1428,8 +1428,9 @@ extension ViewController {
                CFAbsoluteTimeGetCurrent() - globalVar.aiLastIndexedTime > 30 {
                 globalVar.aiLastIndexedPath = folderPath
                 globalVar.aiLastIndexedTime = CFAbsoluteTimeGetCurrent()
+                let withTags = globalVar.aiAutoTaggingEnabled
                 Task {
-                    try? await ImageAIService.shared.index(path: folderPath, maxDepth: 3)
+                    try? await ImageAIService.shared.index(path: folderPath, maxDepth: 3, withTags: withTags)
                 }
             }
         }
