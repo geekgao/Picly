@@ -245,13 +245,13 @@ actor ImageAIService {
         return searchResponse.results
     }
 
-    func index(path: String, maxDepth: Int = 3) async throws -> IndexJob {
+    func index(path: String, maxDepth: Int = 3, withTags: Bool = true) async throws -> IndexJob {
         try await ensureRunning()
         let url = baseURL.appendingPathComponent("index")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let reqBody = IndexRequest(path: path, maxDepth: maxDepth)
+        let reqBody = IndexRequest(path: path, maxDepth: maxDepth, withTags: withTags)
         request.httpBody = try JSONEncoder().encode(reqBody)
 
         let (data, response) = try await session.data(for: request)
@@ -299,13 +299,13 @@ actor ImageAIService {
         return searchResponse.results
     }
 
-    func indexFile(path: String) async throws {
+    func indexFile(path: String, withTags: Bool = true) async throws {
         try await ensureRunning()
         let url = baseURL.appendingPathComponent("index-file")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let body = ["path": path]
+        let body: [String: Any] = ["path": path, "withTags": withTags]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
@@ -350,6 +350,44 @@ actor ImageAIService {
             let body = String(data: data, encoding: .utf8) ?? ""
             throw ImageAIError.httpError(code, body: body)
         }
+    }
+
+    // MARK: - Tagging
+
+    func tagImage(path: String, model: String = "vision", threshold: Float32 = 0.35) async throws -> TagResponse {
+        try await ensureRunning()
+        let url = baseURL.appendingPathComponent("tag")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = ["path": path, "threshold": threshold, "model": model]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw ImageAIError.httpError(code, body: body)
+        }
+        return try JSONDecoder().decode(TagResponse.self, from: data)
+    }
+
+    func tagImageBatch(paths: [String], model: String = "ram", threshold: Float32 = 0.35) async throws -> [String: [TagResult]] {
+        try await ensureRunning()
+        let url = baseURL.appendingPathComponent("tag")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = ["paths": paths, "threshold": threshold, "model": model]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw ImageAIError.httpError(code, body: body)
+        }
+        return try JSONDecoder().decode([String: [TagResult]].self, from: data)
     }
 
     func preload() async throws {
