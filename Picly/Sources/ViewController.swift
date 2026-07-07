@@ -1816,7 +1816,7 @@ class ViewController: NSViewController, NSSplitViewDelegate, NSSearchFieldDelega
                                 // 获取缩略图开始之前版本 （注：已经用dirModel的方法）
                                 // Get version before thumbnail starts (Note: dirModel method already used)
                                 // let fileVer=file.ver
-                                guard let url=URL(string: key.path) else { continue }
+                                guard let url=URL(string: key.path) else { return }
                                 var image: NSImage? = nil
                                 var getThumbFailed = false
                                 if doNotActualRead{
