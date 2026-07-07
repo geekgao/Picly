@@ -158,6 +158,26 @@ class DirMetadataCache {
         saveToDisk(snapshot)
     }
 
+    /// 清除所有 fileInfos 中的 GPS 字段（gpsLat / gpsLon），
+    /// 保留 fileSize / modDate / imageW / imageH / isGetImageSizeFail。
+    /// 目录快照（fileNames / lastChecked）不受影响。
+    func clearAllGPS() {
+        lock.lock()
+        let folderKeys = Array(cache.keys)
+        for folderKey in folderKeys {
+            guard var entry = cache[folderKey] else { continue }
+            for (infoKey, var info) in entry.fileInfos {
+                info.gpsLat = nil
+                info.gpsLon = nil
+                entry.fileInfos[infoKey] = info
+            }
+            cache[folderKey] = entry
+        }
+        let snapshot = cache
+        lock.unlock()
+        saveToDisk(snapshot)
+    }
+
     /// 清除指定目录的缓存（触发下次完整扫描）
     func removeCache(for folderURL: URL) {
         let key = folderURL.absoluteString

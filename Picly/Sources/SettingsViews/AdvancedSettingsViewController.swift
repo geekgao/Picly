@@ -35,6 +35,8 @@ final class AdvancedSettingsViewController: NSViewController, SettingsPane {
     @IBOutlet weak var searchDepthWarningText_External: NSTextField!
     
     @IBOutlet weak var imageAIEnabledCheckbox: NSButton!
+    
+    @IBOutlet weak var clearFaceLocationCacheButton: NSButton!
 
 	override func viewDidLoad() {
 		super.viewDidLoad()
@@ -194,5 +196,24 @@ final class AdvancedSettingsViewController: NSViewController, SettingsPane {
             Task { await ImageAIService.shared.stop() }
         }
     }
-    
+
+    @IBAction func clearFaceLocationCacheTapped(_ sender: NSButton) {
+        let confirmed = showConfirmation(
+            title: NSLocalizedString("Clear Face & Location Cache", comment: "清除人脸与位置缓存"),
+            message: NSLocalizedString("This will clear cached face indexing data and image location (EXIF GPS) data.", comment: "清除人脸与位置缓存的提示信息"),
+            confirmButtonText: NSLocalizedString("Clear", comment: "清除"),
+            cancelButtonText: NSLocalizedString("Cancel", comment: "取消")
+        )
+        guard confirmed else { return }
+
+        FaceIndexedCache.shared.clearAll()
+        GeoCache.shared.clearAll()
+        DirMetadataCache.shared.clearAllGPS()
+
+        showInformation(
+            title: NSLocalizedString("Cleared", comment: "已清除"),
+            message: NSLocalizedString("Face and location cache has been cleared.", comment: "已清除人脸与位置缓存的提示")
+        )
+    }
+
 }

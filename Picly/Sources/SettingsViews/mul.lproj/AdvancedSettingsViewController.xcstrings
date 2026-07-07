@@ -2214,6 +2214,24 @@
           }
         }
       }
+    },
+    "cLC-bt-c01.title" : {
+      "comment" : "Class = \"NSButtonCell\"; title = \"Clear Face & Location Cache\"; ObjectID = \"cLC-bt-c01\";",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Clear Face & Location Cache"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除人脸与位置缓存"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

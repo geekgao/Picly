@@ -23,16 +23,17 @@
                 <outlet property="thumbThreadNumStepper_External" destination="s8k-h5-JjR" id="gxz-KM-ojG"/>
                 <outlet property="useFFmpegRadioButton" destination="Zhk-nP-ekf" id="Otz-ot-Lxa"/>
                 <outlet property="imageAIEnabledCheckbox" destination="cB8-BY-j9b" id="y3r-6h-Rok"/>
+                <outlet property="clearFaceLocationCacheButton" destination="ClF-LC-bTn" id="cFC-bt-out"/>
                 <outlet property="view" destination="c22-O7-iKe" id="buC-Sz-vlD"/>
             </connections>
         </customObject>
         <customObject id="-1" userLabel="First Responder" customClass="FirstResponder"/>
         <customObject id="-3" userLabel="Application" customClass="NSObject"/>
         <customView translatesAutoresizingMaskIntoConstraints="NO" id="c22-O7-iKe">
-            <rect key="frame" x="0.0" y="0.0" width="510" height="782"/>
+            <rect key="frame" x="0.0" y="0.0" width="510" height="824"/>
             <subviews>
                 <gridView xPlacement="center" yPlacement="center" rowAlignment="none" rowSpacing="8" columnSpacing="10" translatesAutoresizingMaskIntoConstraints="NO" id="UrC-xJ-uLm">
-                    <rect key="frame" x="30" y="56" width="450" height="706"/>
+                    <rect key="frame" x="30" y="56" width="450" height="748"/>
                     <constraints>
                         <constraint firstAttribute="width" constant="450" id="vG6-yf-hye"/>
                     </constraints>
@@ -58,6 +59,7 @@
                         <gridRow height="20" id="Y7f-qK-47U"/>
                         <gridRow id="Hqb-gj-9qH"/>
                         <gridRow id="FZ1-p4-5u1"/>
+                        <gridRow id="ClC-bt-row"/>
                     </rows>
                     <columns>
                         <gridColumn xPlacement="trailing" id="RqK-yY-jzI"/>
@@ -414,6 +416,19 @@
                                     <color key="backgroundColor" name="textBackgroundColor" catalog="System" colorSpace="catalog"/>
                                 </textFieldCell>
                             </textField>
+                        </gridCell>
+                        <gridCell row="ClC-bt-row" column="RqK-yY-jzI" id="ClC-bt-L"/>
+                        <gridCell row="ClC-bt-row" column="d5q-Pb-pgU" id="ClC-bt-R">
+                            <button key="contentView" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="ClF-LC-bTn">
+                                <rect key="frame" x="144" y="-130" width="220" height="32"/>
+                                <buttonCell key="cell" type="push" title="Clear Face &amp; Location Cache" bezelStyle="rounded" imagePosition="left" alignment="center" inset="2" id="cLC-bt-c01">
+                                    <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
+                                    <font key="font" metaFont="system"/>
+                                </buttonCell>
+                                <connections>
+                                    <action selector="clearFaceLocationCacheTapped:" target="-2" id="cFC-act-001"/>
+                                </connections>
+                            </button>
                         </gridCell>
                     </gridCells>
                 </gridView>

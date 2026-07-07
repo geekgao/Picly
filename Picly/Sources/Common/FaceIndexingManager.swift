@@ -34,6 +34,15 @@ class FaceIndexedCache {
         dirty = true
     }
 
+    /// Clear all entries. Triggers an immediate disk write.
+    func clearAll() {
+        lock.lock()
+        cache.removeAll()
+        dirty = true
+        lock.unlock()
+        saveToDisk()
+    }
+
     @objc private func saveToDisk() {
         lock.lock()
         guard dirty else { lock.unlock(); return }
